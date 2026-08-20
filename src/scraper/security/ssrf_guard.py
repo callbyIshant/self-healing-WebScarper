@@ -28,6 +28,12 @@ class SSRFGuard:
         """Checks if an IP address is in a blocked private/loopback range."""
         try:
             ip_obj = ipaddress.ip_address(ip)
+            if ip_obj.version == 6 and ip_obj.ipv4_mapped:
+                ip_obj = ip_obj.ipv4_mapped
+                
+            if ip_obj.is_private or ip_obj.is_loopback or ip_obj.is_link_local or ip_obj.is_multicast or ip_obj.is_unspecified:
+                return True
+                
             for cidr in SSRFGuard.BLOCKED_CIDRS:
                 if ip_obj in cidr:
                     return True
@@ -58,8 +64,8 @@ class SSRFGuard:
                 if self.is_private_ip(ip):
                     raise SSRFBlockedError(f"Resolved to blocked IP: {ip}")
         except socket.gaierror:
-            # If we can't resolve it, it might fail later, but it's not a direct SSRF to a known internal IP
-            pass
+            # Fail closed to prevent DNS rebinding or resolving internal hostnames
+            raise SSRFBlockedError(f"Could not resolve hostname: {hostname}")
             
         return url
 
@@ -74,6 +80,8 @@ class SSRFGuard:
         new_parsed = urlparse(validated_url)
         
         if orig_parsed.netloc != new_parsed.netloc:
-            logger.warning("cross_origin_redirect", original=original_url, redirect=redirect_url)
+            safe_orig = original_url.replace(orig_parsed.netloc, orig_parsed.netloc.split('@')[-1])
+            safe_new = redirect_url.replace(new_parsed.netloc, new_parsed.netloc.split('@')[-1])
+            logger.warning("cross_origin_redirect", original=safe_orig, redirect=safe_new)
             
         return validated_url

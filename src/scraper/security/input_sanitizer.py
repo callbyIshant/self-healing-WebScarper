@@ -20,10 +20,11 @@ class InputSanitizer:
 
     def validate_xpath_selector(self, selector: str) -> bool:
         """Parse with lxml.etree.XPath, reject dangerous functions."""
+        import re
         try:
-            # Simple substring check for dangerous functions
+            # Regex check for dangerous functions to avoid whitespace bypass
             for func in self.DANGEROUS_XPATH_FUNCTIONS:
-                if f"{func}(" in selector:
+                if re.search(rf"{func}\s*\(", selector):
                     return False
                     
             # Try parsing

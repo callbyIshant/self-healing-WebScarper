@@ -54,6 +54,8 @@ from scraper.core.models import (
 # Layer 1 — Compliance
 from scraper.compliance.gate import ComplianceGate
 from scraper.compliance.robots import RobotsChecker
+from scraper.compliance.manifest import LegalManifestLoader
+
 
 # Layer 2 — Concurrency
 from scraper.concurrency.rate_limiter import DistributedRateLimiter
@@ -164,13 +166,17 @@ class ScrapingPipeline:
         self._load_volatility_profiles()
 
         # Layer 1 — Compliance
+        manifest_loader = LegalManifestLoader(
+            manifests_dir=os.path.join(self.config_path, "manifests")
+        )
         self.compliance_gate = ComplianceGate(
+            manifest_loader=manifest_loader,
             config_path=os.path.join(self.config_path, "scraping_postures.yaml")
         )
         self.robots_checker = RobotsChecker()
 
         # Layer 2 — Rate Limiting
-        self.rate_limiter = DistributedRateLimiter(redis_client=self.redis_client)
+        self.rate_limiter = DistributedRateLimiter(redis_url=self.redis_client.url)
 
         # Layer 3 — Extraction
         self.locator_registry = LocatorRegistry()
@@ -181,19 +187,19 @@ class ScrapingPipeline:
         await self.lkg_store.initialize(self.db_path)
 
         self.data_plane = DataPlane(
-            locator_registry=self.locator_registry,
+            registry=self.locator_registry,
             lkg_store=self.lkg_store,
         )
 
         # Layer 4 — Validation
         type_validator = TypeValidator()
         biz_validator = BusinessRuleValidator(self.business_rules_config or BusinessRulesConfig())
-        stat_validator = StatisticalValidator(self.volatility_config or VolatilityProfilesConfig())
+        stat_validator = StatisticalValidator(profiles=self.volatility_config or VolatilityProfilesConfig())
         await stat_validator.initialize(self.db_path)
         self.validation_pipeline = ValidationPipeline(
             type_validator=type_validator,
-            business_rule_validator=biz_validator,
-            statistical_validator=stat_validator,
+            business_validator=biz_validator,
+            stat_validator=stat_validator,
         )
 
         # Layer 5 — Circuit Breakers
@@ -339,7 +345,7 @@ class ScrapingPipeline:
                     total = len(extraction_results)
                     failed_count = len(failed_fields)
                     drift_type = await self.spatial_breaker.check_and_classify(
-                        domain, total, failed_count
+                        domain, total_fields=total, failed_fields=failed_count
                     )
 
                     if drift_type == DriftType.GLOBAL:
@@ -466,7 +472,7 @@ class ScrapingPipeline:
                                 # Re-extract with healed selector
                                 try:
                                     re_result = await self.data_plane.extract_field(
-                                        page, field_def
+                                        page, field_def, domain
                                     )
                                     if re_result.success:
                                         response.fields[field_name] = re_result.value

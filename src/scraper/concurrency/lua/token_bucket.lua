@@ -10,7 +10,9 @@ local expiry_key = KEYS[2]
 local capacity = tonumber(ARGV[1])
 local refill_rate = tonumber(ARGV[2])
 local requested = tonumber(ARGV[3])
-local now = tonumber(ARGV[4])
+
+local redis_time = redis.call("TIME")
+local now = tonumber(redis_time[1]) + tonumber(redis_time[2]) / 1000000.0
 
 -- Check manifest expiry if key exists
 local expiry_ts_str = redis.call("GET", expiry_key)

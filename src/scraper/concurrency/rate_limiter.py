@@ -96,10 +96,6 @@ class DistributedRateLimiter:
         expiry_key = f"manifest_expiry:{domain}"
         
         try:
-            # Uses Redis server TIME to prevent clock drift
-            server_time = await self.redis.time()
-            current_time = float(server_time[0]) + float(server_time[1]) / 1000000.0
-            
             result = await self.redis.evalsha(
                 self._script_sha,
                 2,
@@ -107,8 +103,7 @@ class DistributedRateLimiter:
                 expiry_key,
                 config["capacity"],
                 config["refill_rate"],
-                tokens,
-                current_time
+                tokens
             )
             
             allowed, remaining, wait_seconds = result

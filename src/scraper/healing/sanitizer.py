@@ -29,12 +29,13 @@ class AXTreeSanitizer:
         except ParserError:
             return content
         
-        # Simple removal of elements with inline style hiding them
-        for element in tree.xpath('//*[@style]'):
-            style = element.get('style', '').lower()
-            if ('display: none' in style or 'display:none' in style or
-                'visibility: hidden' in style or 'visibility:hidden' in style or
-                'opacity: 0' in style or 'opacity:0' in style):
+        for element in tree.xpath('//*[@style] | //*[@hidden] | //*[@type="hidden"]'):
+            if element.get('hidden') is not None or str(element.get('type')).lower() == 'hidden':
+                element.drop_tree()
+                continue
+                
+            style = element.get('style', '').lower().replace(' ', '')
+            if 'display:none' in style or 'visibility:hidden' in style or 'opacity:0' in style:
                 element.drop_tree()
                 
         return html.tostring(tree, encoding='unicode', method='html')

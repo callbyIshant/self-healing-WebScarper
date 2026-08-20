@@ -88,7 +88,7 @@ class QuarantineStore:
         
         def _save_db() -> None:
             self._conn.execute('''
-                INSERT INTO quarantine_records (
+                INSERT OR REPLACE INTO quarantine_records (
                     snapshot_id, domain, field_name, page_url, broken_selector, 
                     proposed_selector, confidence_score, quarantined_at, 
                     retention_expires_at, resolved, cold_storage_key

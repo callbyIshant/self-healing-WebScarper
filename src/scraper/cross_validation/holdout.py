@@ -69,7 +69,7 @@ class CrossValidator:
         
         # Import dynamically if needed to avoid circular dependency
         try:
-            from scraper.validation.types import TypeValidator
+            from scraper.validation.type_validator import TypeValidator
             validator = TypeValidator()
         except ImportError:
             # Fallback mock if validation layer is not present yet

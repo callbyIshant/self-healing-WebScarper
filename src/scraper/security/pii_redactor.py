@@ -9,7 +9,7 @@ class PIIRedactor:
         'EMAIL': re.compile(r'[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+'),
         'PHONE': re.compile(r'(?:\+\d{1,3}[- ]?)?\(?\d{3}\)?[- ]?\d{3}[- ]?\d{4}'),
         'SSN': re.compile(r'\b\d{3}-\d{2}-\d{4}\b'),
-        'CREDIT_CARD': re.compile(r'\b(?:\d[ -]*?){13,16}\b'),
+        'CREDIT_CARD': re.compile(r'\b(?:\d(?:[ -]*\d){12,15})\b'),
         'IPV4': re.compile(r'\b(?:\d{1,3}\.){3}\d{1,3}\b')
     }
 
