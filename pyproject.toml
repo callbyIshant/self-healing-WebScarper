@@ -1,0 +1,90 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "self-healing-web-scraper"
+version = "0.1.0"
+description = "Production-grade self-healing web scraping pipeline with AI-driven selector repair"
+requires-python = ">=3.11"
+license = {text = "MIT"}
+authors = [{name = "Ishan"}]
+
+dependencies = [
+    # Browser automation
+    "playwright>=1.49.0",
+
+    # Data validation
+    "pydantic>=2.9.0",
+    "pydantic-settings>=2.5.0",
+
+    # LLM integration
+    "google-genai>=1.0.0",
+
+    # Storage
+    "aiosqlite>=0.20.0",
+    "redis[hiredis]>=5.0.0",
+
+    # Rate limiting (fallback)
+    "limits>=3.13.0",
+
+    # Robots.txt (RFC 9309)
+    "protego>=0.3.0",
+
+    # Telemetry
+    "structlog>=24.4.0",
+    "prometheus-client>=0.21.0",
+
+    # Security
+    "cssselect>=1.2.0",
+    "lxml>=5.3.0",
+
+    # Config
+    "pyyaml>=6.0.0",
+
+    # CLI
+    "click>=8.1.0",
+    "rich>=13.0.0",
+
+    # Async utilities
+    "anyio>=4.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.24.0",
+    "pytest-cov>=5.0.0",
+    "fakeredis>=2.25.0",
+    "pytest-mock>=3.14.0",
+    "ruff>=0.8.0",
+    "mypy>=1.13.0",
+    "pip-audit>=2.7.0",
+    "safety>=3.0.0",
+]
+
+[project.scripts]
+scraper = "scraper.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/scraper"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+markers = [
+    "integration: marks tests that require external services (Redis, etc.)",
+]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "N", "UP", "S", "B", "A", "C4", "SIM", "TCH"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+warn_return_any = true
+warn_unused_configs = true

@@ -1,0 +1,54 @@
+# Example Domain Configuration
+# Defines extraction schema, rate limits, and holdout pages for books.toscrape.com
+
+domain: books.toscrape.com
+
+rate_limit:
+  requests_per_minute: 20
+  burst_capacity: 3
+
+fields:
+  - name: title
+    selector: 'get_by_role("heading", level=1)'
+    strategy: role
+    field_type: string
+    volatility: low
+    required: true
+    description: "Book title"
+
+  - name: price
+    selector: '[data-testid="product-price"], .price_color'
+    strategy: css
+    field_type: float
+    volatility: medium
+    required: true
+    description: "Book price in GBP"
+
+  - name: availability
+    selector: '.availability'
+    strategy: css
+    field_type: string
+    volatility: high
+    required: true
+    description: "Stock availability status"
+
+  - name: rating
+    selector: '.star-rating'
+    strategy: css
+    field_type: string
+    volatility: low
+    required: false
+    description: "Star rating (One through Five)"
+
+  - name: description
+    selector: '#product_description ~ p'
+    strategy: css
+    field_type: string
+    volatility: low
+    required: false
+    description: "Product description paragraph"
+
+holdout_urls:
+  - https://books.toscrape.com/catalogue/a-light-in-the-attic_1000/index.html
+  - https://books.toscrape.com/catalogue/tipping-the-velvet_999/index.html
+  - https://books.toscrape.com/catalogue/soumission_998/index.html

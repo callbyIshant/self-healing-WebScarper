@@ -1,0 +1,16 @@
+# Scraping Posture Configuration (§4.1)
+# Each domain must have an explicit posture. Domains not listed here
+# default to strict_compliance.
+
+defaults:
+  posture: strict_compliance
+
+domains:
+  # Example: strict compliance (default for all domains)
+  example.com:
+    posture: strict_compliance
+
+  # Example: adversarial/commercial requires a signed legal manifest
+  # api.example.com:
+  #   posture: adversarial_commercial
+  #   manifest_path: manifests/api_example_com.json

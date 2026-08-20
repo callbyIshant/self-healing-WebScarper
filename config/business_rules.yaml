@@ -1,0 +1,49 @@
+# Business Rules Configuration (§4.4.2)
+# Version-controlled, separate from scraper code.
+# Changes require PR review + backtest against production data.
+#
+# Supported operators:
+#   gt, gte, lt, lte, eq, ne      — numeric/comparable comparisons
+#   min_length, max_length         — string length checks
+#   regex                          — pattern match
+#   in                             — membership check
+
+rules:
+  # Price must be positive for physical products
+  - field: price
+    op: gt
+    value: 0
+    context:
+      product_type: physical
+    description: "Physical product prices must be positive"
+
+  # Price can be zero for digital products (free downloads)
+  - field: price
+    op: gte
+    value: 0
+    context:
+      product_type: digital
+    description: "Digital product prices can be zero (free)"
+
+  # Title must not be empty
+  - field: title
+    op: min_length
+    value: 1
+    description: "Title must not be empty"
+
+  # Title must not be absurdly long
+  - field: title
+    op: max_length
+    value: 500
+    description: "Title must be under 500 characters"
+
+  # Rating must be in valid range
+  - field: rating
+    op: gte
+    value: 0
+    description: "Rating must be non-negative"
+
+  - field: rating
+    op: lte
+    value: 5
+    description: "Rating must be at most 5"

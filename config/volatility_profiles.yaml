@@ -1,0 +1,16 @@
+# Volatility Profile Configuration (§4.4.3)
+# Defines how much natural variance is expected per field category.
+# Statistical anomaly detection calibrates thresholds per profile.
+
+profiles:
+  low:
+    description: "Stable fields — dimensions, categories, product IDs"
+    sigma_threshold: 2.0
+
+  medium:
+    description: "Moderate variance — prices, ratings, review counts"
+    sigma_threshold: 3.0
+
+  high:
+    description: "High variance — stock quantities, availability status, timestamps"
+    sigma_threshold: 5.0
