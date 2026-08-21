@@ -399,6 +399,7 @@ class ScrapingPipeline:
                                     lkg_snapshot=lkg,
                                     sanitizer=self.sanitizer,
                                     scorer=self.scorer,
+                                    page=page,
                                 )
                             )
 
@@ -486,16 +487,17 @@ class ScrapingPipeline:
 
                             else:
                                 # Quarantine
+                                sanitized_tree, _ = self.sanitizer.sanitize(raw_ax_tree)
+                                redacted_tree = self.pii_redactor.redact(sanitized_tree)
                                 record = QuarantineRecord(
                                     domain=domain,
                                     field_name=field_name,
                                     page_url=url,
                                     broken_selector=failed_result.selector_used,
+                                    sanitized_ax_tree=redacted_tree,
                                     proposed_selector=repair_result.primary_selector,
                                     confidence_score=confidence,
                                 )
-                                sanitized_tree, _ = self.sanitizer.sanitize(raw_ax_tree)
-                                redacted_tree = self.pii_redactor.redact(sanitized_tree)
                                 await self.quarantine_store.quarantine(record, redacted_tree)
 
                                 response.quarantined_fields.append(field_name)

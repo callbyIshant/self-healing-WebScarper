@@ -24,7 +24,7 @@ class AXTreeSanitizer:
 
     def strip_hidden_elements(self, content: str) -> str:
         try:
-            parser = html.HTMLParser(resolve_entities=False, no_network=True)
+            parser = html.HTMLParser(no_network=True)
             tree = html.fromstring(content, parser=parser)
         except ParserError:
             return content
@@ -42,7 +42,7 @@ class AXTreeSanitizer:
 
     def strip_executable_nodes(self, content: str) -> str:
         try:
-            parser = html.HTMLParser(resolve_entities=False, no_network=True)
+            parser = html.HTMLParser(no_network=True)
             tree = html.fromstring(content, parser=parser)
         except ParserError:
             return content

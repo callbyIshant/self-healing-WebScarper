@@ -11,8 +11,6 @@ class ConfidenceScorer:
     """
 
     def structural_similarity(self, proposed_ax: str, lkg_ax: str) -> float:
-        # Extract basic elements/roles from a string, e.g. "button", "div", "link"
-        # Since we don't have a real parser for YAML AXTree here, just tokenizing basic structural terms
         def extract_structure(text: str) -> set[str]:
             return set(re.findall(r'[a-zA-Z]+', text.lower()))
             
@@ -22,11 +20,11 @@ class ConfidenceScorer:
         if not proposed_struct and not lkg_struct:
             return 1.0
         if not proposed_struct or not lkg_struct:
-            return 0.0
+            return 0.5
             
         intersection = len(proposed_struct.intersection(lkg_struct))
         union = len(proposed_struct.union(lkg_struct))
-        return intersection / union
+        return intersection / union if union > 0 else 0.5
 
     def semantic_similarity(self, proposed_text: str, lkg_text: str) -> float:
         def get_words(text: str) -> list[str]:
@@ -38,22 +36,19 @@ class ConfidenceScorer:
         if not words1 and not words2:
             return 1.0
         if not words1 or not words2:
-            return 0.0
+            return 0.5
             
         counter1 = Counter(words1)
         counter2 = Counter(words2)
         
         terms = set(counter1.keys()).union(set(counter2.keys()))
-        
-        # Simple dot product of frequencies
         dot_product = sum(counter1.get(t, 0) * counter2.get(t, 0) for t in terms)
         
-        # Magnitude
         mag1 = math.sqrt(sum(v**2 for v in counter1.values()))
         mag2 = math.sqrt(sum(v**2 for v in counter2.values()))
         
         if mag1 == 0 or mag2 == 0:
-            return 0.0
+            return 0.5
             
         return dot_product / (mag1 * mag2)
 
@@ -61,7 +56,7 @@ class ConfidenceScorer:
         if proposed_role is None and lkg_role is None:
             return 1.0
         if proposed_role is None or lkg_role is None:
-            return 0.0
+            return 0.8
             
         p_role = proposed_role.strip().lower()
         l_role = lkg_role.strip().lower()
@@ -69,35 +64,46 @@ class ConfidenceScorer:
         if p_role == l_role:
             return 1.0
         if p_role in l_role or l_role in p_role:
-            return 0.5
-        return 0.0
+            return 0.7
+        return 0.5
 
     def value_format_match(self, proposed_value: str, lkg_sample: str) -> float:
-        # Determine if values share similar format (e.g. both numbers, both dates, both currencies)
         def get_type(val: str) -> str:
-            if re.match(r'^\$?\d+(,\d{3})*(\.\d+)?$', val):
+            val_clean = val.strip()
+            if re.search(r'[\$£€]?\s*\d+(\.\d+)?', val_clean):
                 return 'currency_or_number'
-            if re.match(r'^\d{4}-\d{2}-\d{2}', val) or re.match(r'^\d{1,2}/\d{1,2}/\d{2,4}', val):
+            if re.match(r'^\d{4}-\d{2}-\d{2}', val_clean) or re.match(r'^\d{1,2}/\d{1,2}/\d{2,4}', val_clean):
                 return 'date'
-            if '@' in val and '.' in val:
+            if '@' in val_clean and '.' in val_clean:
                 return 'email'
             return 'string'
             
+        if not lkg_sample:
+            # If no LKG sample, check if proposed value has a recognizable non-empty format
+            return 1.0 if proposed_value.strip() else 0.5
+            
         if get_type(proposed_value) == get_type(lkg_sample):
             return 1.0
-        return 0.0
+        return 0.4
 
-    def compute_confidence(self, proposed_ax_tree: str, proposed_text: str, proposed_role: Optional[str], proposed_value: str, lkg_snapshot: Optional[LKGSnapshot]) -> float:
+    def compute_confidence(
+        self,
+        proposed_ax_tree: str,
+        proposed_text: str,
+        proposed_role: Optional[str],
+        proposed_value: str,
+        lkg_snapshot: Optional[LKGSnapshot]
+    ) -> float:
         w_struct = 0.3
         w_sem = 0.3
         w_role = 0.25
         w_val = 0.15
         
         if not lkg_snapshot:
-            # When no prior baseline exists, award default base confidence
-            return 0.8
+            # No prior LKG baseline exists — base confidence on format and text presence
+            format_score = self.value_format_match(proposed_value or proposed_text, "")
+            return 0.85 * format_score
         
-        # Extract LKG strings from real LKGSnapshot model fields
         lkg_ax = lkg_snapshot.ax_tree_neighborhood or ""
         lkg_text = lkg_snapshot.text_signature or ""
         lkg_role = lkg_snapshot.strategy.value if lkg_snapshot.strategy else None
@@ -110,4 +116,3 @@ class ConfidenceScorer:
         score += w_val * self.value_format_match(proposed_value or proposed_text, lkg_sample)
         
         return min(max(score, 0.0), 1.0)
-

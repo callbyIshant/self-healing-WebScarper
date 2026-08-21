@@ -55,24 +55,26 @@ class DataPlane:
         try:
             # Execute extraction using Playwright semantic APIs in priority order
             locator: Locator
-            match strategy:
-                case SelectorStrategy.ROLE:
-                    locator = page.get_by_role(selector)  # type: ignore
-                case SelectorStrategy.ARIA:
-                    locator = page.get_by_label(selector)
-                case SelectorStrategy.TEXT:
-                    locator = page.get_by_text(selector)
-                case SelectorStrategy.TEST_ID:
-                    locator = page.get_by_test_id(selector)
-                case SelectorStrategy.CSS:
-                    locator = page.locator(selector)
-                case SelectorStrategy.XPATH:
-                    locator = page.locator(selector)
-                case _:
-                    locator = page.locator(selector)
+            if selector.startswith("text=") or selector.startswith("xpath=") or selector.startswith("css="):
+                locator = page.locator(selector)
+            else:
+                match strategy:
+                    case SelectorStrategy.ROLE:
+                        try:
+                            locator = page.get_by_role(selector)  # type: ignore
+                        except Exception:
+                            locator = page.locator(selector)
+                    case SelectorStrategy.ARIA:
+                        locator = page.get_by_label(selector)
+                    case SelectorStrategy.TEXT:
+                        locator = page.locator(f"text={selector}")
+                    case SelectorStrategy.TEST_ID:
+                        locator = page.get_by_test_id(selector)
+                    case _:
+                        locator = page.locator(selector)
             
-            # Fetch text content with 5-second timeout
-            text_content = await locator.text_content(timeout=5000)
+            # Fetch text content with 5-second timeout on first matching element
+            text_content = await locator.first.text_content(timeout=5000)
             
             if text_content is None:
                 raise ExtractionError(f"Field {field.name} found but returned None text_content")
