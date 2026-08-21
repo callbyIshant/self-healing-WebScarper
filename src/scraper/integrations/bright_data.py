@@ -3,14 +3,17 @@ Bright Data Scraper Studio & Scraping Browser Integration Adapter.
 
 Provides seamless integration with:
 1. Bright Data Scraper Studio (triggering custom scrapers, polling jobs, and ingesting structured records).
-2. Bright Data Scraping Browser (Playwright CDP connection with automated fingerprint rotation and CAPTCHA solving).
-3. Piping Scraper Studio records through the 9-layer Self-Healing pipeline for validation, anomaly detection, and AI repair.
+2. Bright Data CLI (`bdata` command execution for scraper create, run, heal, and approve).
+3. Bright Data Scraping Browser (Playwright CDP connection with automated fingerprint rotation and CAPTCHA solving).
+4. Piping Scraper Studio records through the 9-layer Self-Healing pipeline for validation, anomaly detection, and AI repair.
 """
 
 from __future__ import annotations
 
 import os
+import re
 import asyncio
+import subprocess
 from typing import Any, Optional, Dict, List
 import httpx
 import structlog
@@ -45,6 +48,10 @@ class BrightDataScraperStudioClient:
             "Content-Type": "application/json",
         }
 
+    # ──────────────────────────────────────────────
+    # REST API Ingestion (POST /dca/trigger)
+    # ──────────────────────────────────────────────
+
     async def trigger_custom_scraper(
         self,
         inputs: List[Dict[str, Any]],
@@ -52,13 +59,6 @@ class BrightDataScraperStudioClient:
     ) -> Dict[str, Any]:
         """
         Trigger an asynchronous collection job for a custom scraper built in Scraper Studio.
-        
-        Args:
-            inputs: List of target URL objects (e.g. [{"url": "https://books.toscrape.com/..."}])
-            scraper_id: Custom scraper identifier created in Scraper Studio.
-            
-        Returns:
-            Dictionary containing the triggered snapshot_id / collection_id.
         """
         target_scraper = scraper_id or self.scraper_id
         if not target_scraper:
@@ -151,6 +151,68 @@ class BrightDataScraperStudioClient:
                 raise RuntimeError(f"Scraper Studio collection {snapshot_id} failed: {status_res}")
 
             await asyncio.sleep(poll_interval)
+
+    # ──────────────────────────────────────────────
+    # Bright Data CLI (`bdata`) Orchestration
+    # ──────────────────────────────────────────────
+
+    async def run_bdata_cli(self, args: List[str]) -> str:
+        """
+        Execute Bright Data CLI command via npx without global install requirements.
+        """
+        cmd = ["npx", "-y", "@brightdata/cli"] + args
+        logger.info("executing_bdata_cli", command=" ".join(cmd))
+        
+        proc = await asyncio.create_subprocess_exec(
+            *cmd,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE
+        )
+        stdout, stderr = await proc.communicate()
+        
+        if proc.returncode != 0:
+            err_msg = stderr.decode(errors="replace").strip()
+            raise RuntimeError(f"Bright Data CLI failed with code {proc.returncode}: {err_msg}")
+            
+        return stdout.decode(errors="replace").strip()
+
+    async def bdata_create_scraper(self, url: str, prompt: str) -> str:
+        """
+        Create a custom scraper in Scraper Studio via bdata CLI.
+        Returns the created Collector ID (e.g. c_mpohus372o5tmid1jk).
+        """
+        output = await self.run_bdata_cli(["scraper", "create", url, prompt])
+        match = re.search(r"(c_[a-z0-9]+)", output)
+        if match:
+            collector_id = match.group(1)
+            logger.info("bdata_scraper_created", collector_id=collector_id)
+            return collector_id
+        return output
+
+    async def bdata_run_scraper(self, collector_id: str, url: str) -> str:
+        """
+        Run a scraper via bdata CLI and retrieve structured output.
+        """
+        return await self.run_bdata_cli(["scraper", "run", collector_id, url])
+
+    async def bdata_heal_scraper(self, collector_id: str, what_broke: str) -> str:
+        """
+        Trigger an AI self-healing repair proposal in Scraper Studio via bdata CLI.
+        """
+        return await self.run_bdata_cli(["scraper", "heal", collector_id, what_broke])
+
+    async def bdata_approve_heal(self, collector_id: str, reject: bool = False) -> str:
+        """
+        Approve or reject a proposed self-healing fix in Scraper Studio via bdata CLI.
+        """
+        args = ["scraper", "approve", collector_id]
+        if reject:
+            args.append("--reject")
+        return await self.run_bdata_cli(args)
+
+    # ──────────────────────────────────────────────
+    # Scraping Browser (Playwright CDP)
+    # ──────────────────────────────────────────────
 
     async def connect_scraping_browser(self, playwright: Playwright) -> Browser:
         """

@@ -199,5 +199,67 @@ def metrics(port: int):
         console.print("\n[yellow]Metrics server stopped.[/yellow]")
 
 
+# ──────────────────────────────────────────────
+# Bright Data Scraper Studio CLI Commands
+# ──────────────────────────────────────────────
+
+@main.command()
+@click.argument('url')
+@click.argument('prompt')
+def bdata_create(url: str, prompt: str):
+    """Create a custom scraper in Bright Data Scraper Studio via bdata CLI."""
+    from scraper.integrations.bright_data import BrightDataScraperStudioClient
+    async def _run():
+        client = BrightDataScraperStudioClient()
+        console.print(f"[bold blue]Creating Scraper Studio collector for[/bold blue] [cyan]{url}[/cyan]...")
+        collector_id = await client.bdata_create_scraper(url, prompt)
+        console.print(f"[bold green]Collector Created:[/bold green] [yellow]{collector_id}[/yellow]")
+    asyncio.run(_run())
+
+
+@main.command()
+@click.argument('collector_id')
+@click.argument('url')
+def bdata_run(collector_id: str, url: str):
+    """Run a Scraper Studio custom scraper via bdata CLI."""
+    from scraper.integrations.bright_data import BrightDataScraperStudioClient
+    async def _run():
+        client = BrightDataScraperStudioClient()
+        console.print(f"[bold blue]Running Scraper Studio collector[/bold blue] [yellow]{collector_id}[/yellow] on [cyan]{url}[/cyan]...")
+        output = await client.bdata_run_scraper(collector_id, url)
+        console.print(output)
+    asyncio.run(_run())
+
+
+@main.command()
+@click.argument('collector_id')
+@click.argument('what_broke')
+def bdata_heal(collector_id: str, what_broke: str):
+    """Propose an AI self-healing fix in Scraper Studio via bdata CLI."""
+    from scraper.integrations.bright_data import BrightDataScraperStudioClient
+    async def _run():
+        client = BrightDataScraperStudioClient()
+        console.print(f"[bold yellow]Triggering Scraper Studio heal for[/bold yellow] [yellow]{collector_id}[/yellow]...")
+        output = await client.bdata_heal_scraper(collector_id, what_broke)
+        console.print(output)
+    asyncio.run(_run())
+
+
+@main.command()
+@click.argument('collector_id')
+@click.option('--reject', is_flag=True, default=False, help='Reject the proposed fix')
+def bdata_approve(collector_id: str, reject: bool):
+    """Approve or reject a Scraper Studio self-healing fix via bdata CLI."""
+    from scraper.integrations.bright_data import BrightDataScraperStudioClient
+    async def _run():
+        client = BrightDataScraperStudioClient()
+        action = "Rejecting" if reject else "Approving"
+        console.print(f"[bold green]{action} fix for Scraper Studio collector[/bold green] [yellow]{collector_id}[/yellow]...")
+        output = await client.bdata_approve_heal(collector_id, reject=reject)
+        console.print(output)
+    asyncio.run(_run())
+
+
 if __name__ == '__main__':
     main()
+
