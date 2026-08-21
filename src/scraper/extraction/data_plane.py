@@ -93,7 +93,7 @@ class DataPlane:
             # Best effort to capture AX tree context around the node
             ax_tree_neighborhood = ""
             try:
-                ax_tree_neighborhood = await locator.aria_snapshot()
+                ax_tree_neighborhood = await locator.first.aria_snapshot()
             except Exception:
                 pass
 

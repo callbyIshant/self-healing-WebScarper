@@ -1,0 +1,46 @@
+# RemoteOK Tech Jobs Domain Configuration
+# Real-world tech job board data extraction schema
+
+domain: remoteok.com
+
+rate_limit:
+  requests_per_minute: 20
+  burst_capacity: 5
+
+fields:
+  - name: title
+    selector: "tr.job h2"
+    strategy: css
+    field_type: string
+    volatility: low
+    required: true
+    description: "Job title or position name"
+
+  - name: company
+    selector: "tr.job h3"
+    strategy: css
+    field_type: string
+    volatility: low
+    required: true
+    description: "Hiring company name"
+
+  - name: salary
+    selector: "tr.job .location:nth-of-type(1)"
+    strategy: css
+    field_type: string
+    volatility: medium
+    required: false
+    description: "Estimated salary or pay range"
+
+  - name: tags
+    selector: "tr.job .tag h3"
+    strategy: css
+    field_type: string
+    volatility: high
+    required: false
+    description: "Technology skills or tags (Python, React, etc.)"
+
+holdout_urls:
+  - https://remoteok.com/remote-python-jobs
+  - https://remoteok.com/remote-devops-jobs
+  - https://remoteok.com/remote-engineer-jobs

@@ -1,0 +1,37 @@
+# Hacker News Domain Configuration
+# Real-world tech news & discussion forum extraction schema
+
+domain: news.ycombinator.com
+
+rate_limit:
+  requests_per_minute: 30
+  burst_capacity: 5
+
+fields:
+  - name: title
+    selector: ".titleline > a"
+    strategy: css
+    field_type: string
+    volatility: low
+    required: true
+    description: "Top story title"
+
+  - name: score
+    selector: ".score"
+    strategy: css
+    field_type: string
+    volatility: high
+    required: false
+    description: "Upvote score points"
+
+  - name: submitter
+    selector: ".hnuser"
+    strategy: css
+    field_type: string
+    volatility: medium
+    required: false
+    description: "User who submitted the story"
+
+holdout_urls:
+  - https://news.ycombinator.com/news?p=2
+  - https://news.ycombinator.com/news?p=3

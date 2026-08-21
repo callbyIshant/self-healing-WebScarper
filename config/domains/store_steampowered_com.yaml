@@ -1,0 +1,46 @@
+# Steam Powered Game Store Domain Configuration
+# Real-world gaming marketplace extraction schema
+
+domain: store.steampowered.com
+
+rate_limit:
+  requests_per_minute: 25
+  burst_capacity: 5
+
+fields:
+  - name: title
+    selector: "#appHubAppName"
+    strategy: css
+    field_type: string
+    volatility: low
+    required: true
+    description: "Game title"
+
+  - name: price
+    selector: ".game_purchase_price, .discount_final_price"
+    strategy: css
+    field_type: string
+    volatility: medium
+    required: false
+    description: "Purchase price"
+
+  - name: review_summary
+    selector: ".game_review_summary"
+    strategy: css
+    field_type: string
+    volatility: medium
+    required: false
+    description: "Overall review rating (Very Positive, Mostly Positive, etc.)"
+
+  - name: release_date
+    selector: ".release_date .date"
+    strategy: css
+    field_type: string
+    volatility: low
+    required: false
+    description: "Game release date"
+
+holdout_urls:
+  - https://store.steampowered.com/app/1086940/Baldurs_Gate_3/
+  - https://store.steampowered.com/app/1245620/ELDEN_RING/
+  - https://store.steampowered.com/app/730/CounterStrike_2/
