@@ -76,13 +76,12 @@ async def on_shutdown():
         await _pipeline.shutdown()
 
 
-# ──────────────────────────────────────────────
-# HTTP Routes
-# ──────────────────────────────────────────────
+from fastapi.responses import HTMLResponse, JSONResponse, FileResponse
 
-@app.get("/", response_class=HTMLResponse)
-async def serve_index(request: Request):
-    return templates.TemplateResponse("index.html", {"request": request})
+@app.get("/", response_class=FileResponse)
+async def serve_index():
+    index_file = TEMPLATES_DIR / "index.html"
+    return FileResponse(str(index_file))
 
 
 @app.get("/api/health")
