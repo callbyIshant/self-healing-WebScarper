@@ -1,0 +1,71 @@
+[
+  {
+    "request_id": "req-9b8f2c10",
+    "domain": "books.toscrape.com",
+    "url": "https://books.toscrape.com/catalogue/a-light-in-the-attic_1000/index.html",
+    "timestamp": "2026-08-21T05:20:56.204920Z",
+    "status": "SUCCESS",
+    "extracted_data": {
+      "title": "A Light in the Attic",
+      "price": 51.77,
+      "currency": "GBP",
+      "availability": "In stock (22 available)",
+      "rating": "Three",
+      "description": "It's hard to imagine a world without A Light in the Attic. This now-classic collection of poetry and drawings from Shel Silverstein celebrates its 20th anniversary with this special edition."
+    },
+    "validation": {
+      "type_checks_passed": true,
+      "business_rules_passed": true,
+      "statistical_anomaly_detected": false,
+      "z_score": 0.42
+    },
+    "drift_detected": false,
+    "quarantined": false
+  },
+  {
+    "request_id": "req-9b8f2c11",
+    "domain": "books.toscrape.com",
+    "url": "https://books.toscrape.com/catalogue/tipping-the-velvet_999/index.html",
+    "timestamp": "2026-08-21T05:21:02.118940Z",
+    "status": "SUCCESS",
+    "extracted_data": {
+      "title": "Tipping the Velvet",
+      "price": 53.74,
+      "currency": "GBP",
+      "availability": "In stock (20 available)",
+      "rating": "One",
+      "description": "\"Erotic and absorbing...Written with starling power.\"--\"The New York Times Book Review\" Nan King, an oyster girl, is captivated by the music hall phenomenon Kitty Butler..."
+    },
+    "validation": {
+      "type_checks_passed": true,
+      "business_rules_passed": true,
+      "statistical_anomaly_detected": false,
+      "z_score": 0.58
+    },
+    "drift_detected": false,
+    "quarantined": false
+  },
+  {
+    "request_id": "req-9b8f2c12",
+    "domain": "books.toscrape.com",
+    "url": "https://books.toscrape.com/catalogue/soumission_998/index.html",
+    "timestamp": "2026-08-21T05:21:07.882410Z",
+    "status": "SUCCESS",
+    "extracted_data": {
+      "title": "Soumission",
+      "price": 50.10,
+      "currency": "GBP",
+      "availability": "In stock (20 available)",
+      "rating": "One",
+      "description": "Dans une France assez proche de la notre, un president de la republique d'origine musulmane est elu..."
+    },
+    "validation": {
+      "type_checks_passed": true,
+      "business_rules_passed": true,
+      "statistical_anomaly_detected": false,
+      "z_score": 0.12
+    },
+    "drift_detected": false,
+    "quarantined": false
+  }
+]

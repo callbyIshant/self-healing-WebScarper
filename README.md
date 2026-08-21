@@ -1,7 +1,9 @@
 # Self-Healing Web Scraping Pipeline
 
-A production-grade, 9-layer data extraction pipeline in Python that extracts structured data via semantic locators, detects layout drift, auto-repairs broken selectors using AI (Google Gemini), and fails safe toward halting and alerting humans.
+A production-grade, 9-layer data extraction pipeline in Python that extracts structured data via semantic locators, integrates with **Bright Data Scraper Studio & Scraping Browser**, detects layout drift, auto-repairs broken selectors using AI (Google Gemini), and fails safe toward halting and alerting humans.
 
+[![Hackathon](https://img.shields.io/badge/Into%20the%20Scrape--Verse-Hackathon%20Submission-blueviolet)](https://github.com/callbyIshant/self-healing-WebScarper)
+[![Bright Data](https://img.shields.io/badge/Powered%20by-Bright%20Data%20Scraper%20Studio-00D4FF)](https://brightdata.com/)
 [![Tests](https://img.shields.io/badge/Tests-66%20Passed-brightgreen)](tests/)
 [![Python](https://img.shields.io/badge/Python-3.11%2B-blue)](https://python.org)
 [![Playwright](https://img.shields.io/badge/Playwright-Automated-orange)](https://playwright.dev/python/)
@@ -10,15 +12,28 @@ A production-grade, 9-layer data extraction pipeline in Python that extracts str
 
 ---
 
+## Hackathon Submission Highlights ("Into the Scrape-Verse")
+
+| Requirement | Project Implementation |
+|---|---|
+| **Required Technology** | Integrates with **Bright Data Scraper Studio** (`src/scraper/integrations/bright_data.py`) to trigger and ingest custom scrapers, and connects Playwright over CDP to **Bright Data Scraping Browser** for anti-bot & CAPTCHA unblocking. |
+| **Custom Scraper** | Custom scraper created in Scraper Studio targeting public e-commerce catalogs with multi-tier validation and live fallback. |
+| **Public Data Compliance** | Strictly extracts public data (`books.toscrape.com`), respects `robots.txt` (RFC 9309 via `protego`), and complies with ethical scraping standards. |
+| **Structured Output** | JSON datasets provided in [`examples/output/books_sample_output.json`](examples/output/books_sample_output.json) and [`examples/output/bright_data_custom_scraper_output.json`](examples/output/bright_data_custom_scraper_output.json). |
+| **AI Assistant Disclosure** | AI coding assistant was used to accelerate scaffolding, multi-agent security reviews, and test generation under human developer direction and architecture design. |
+
+---
+
 ## Architecture Overview
 
 ```mermaid
 graph TD
-    REQ["Scraping Request"] --> L1["L1: Legal Compliance Gate<br/>(robots.txt RFC 9309, Postures, Manifests)"]
+    REQ["Scraping Request"] --> BD["Bright Data Scraper Studio & Scraping Browser<br/>(Custom Scraper Ingestion & Web Unlocking)"]
+    BD --> L1["L1: Legal Compliance Gate<br/>(robots.txt RFC 9309, Postures, Manifests)"]
     L1 --> L2["L2: Distributed Rate Limiting<br/>(Redis Token Bucket + Local Fallback)"]
     L2 --> L3["L3: Data Plane<br/>(Playwright Semantic & ARIA Extraction)"]
     L3 -->|Success| EMIT["Emit Data + Update LKG History"]
-    L3 -->|Failure| L4["L4: Multi-Tier Validation<br/>(Type -> Business -> Statistical)"]
+    L3 -->|Failure / Drift| L4["L4: Multi-Tier Validation<br/>(Type -> Business -> Statistical)"]
     L4 --> L5S["L5: Spatial Circuit Breaker<br/>(Blast Radius & Debounce Sequence)"]
     L5S -->|Global Drift >40%| HALT["HALT Domain<br/>Page Human Operator"]
     L5S -->|Local Drift| L5T["L5: Temporal Circuit Breaker<br/>(Thrash Detection: >3 repairs/48h)"]
@@ -29,14 +44,42 @@ graph TD
     L7 -->|Passes| L8["L8: Confidence Gate & Quarantine<br/>(Deterministic Similarity Scoring)"]
     L8 -->|Confidence >= 75%| RELOAD["Hot-Reload Selector into Registry<br/>Re-extract Field"]
     L8 -->|Confidence < 75%| QUARANTINE["Quarantine Record + Cold Storage TTL"]
-    L9["L9: Telemetry & Observability<br/>(structlog JSON + Prometheus Metrics)"] -.->|Observes| L1
-    L9 -.-> L2
-    L9 -.-> L3
-    L9 -.-> L4
-    L9 -.-> L5S
-    L9 -.-> L6
-    L9 -.-> L7
-    L9 -.-> L8
+    L9["L9: Telemetry & Observability<br/>(structlog JSON + Prometheus Metrics)"] -.->|Observes All Layers| L1
+```
+
+---
+
+## Bright Data Scraper Studio Integration
+
+The pipeline connects to Bright Data through two core interfaces in [`src/scraper/integrations/bright_data.py`](src/scraper/integrations/bright_data.py):
+
+### 1. Custom Scraper Studio API Ingestion
+Allows triggering custom scrapers built inside **Bright Data Scraper Studio**, polling execution progress, and piping output into the 9-layer Self-Healing pipeline:
+```python
+from scraper.integrations.bright_data import BrightDataScraperStudioClient
+
+client = BrightDataScraperStudioClient()
+
+# Trigger custom Scraper Studio collector and wait for structured records
+results = await client.collect_sync(
+    inputs=[{"url": "https://books.toscrape.com/catalogue/a-light-in-the-attic_1000/index.html"}],
+    scraper_id="custom_ecommerce_books_scraper"
+)
+```
+
+### 2. Bright Data Scraping Browser (CDP Automation)
+Connects Playwright over Chrome DevTools Protocol (CDP) to Bright Data's proxy cloud with automated fingerprint rotation and CAPTCHA solving:
+```python
+from playwright.async_api import async_playwright
+from scraper.integrations.bright_data import BrightDataScraperStudioClient
+
+client = BrightDataScraperStudioClient()
+
+async with async_playwright() as p:
+    # Connect Playwright to Bright Data Scraping Browser
+    browser = await client.connect_scraping_browser(p)
+    page = await browser.new_page()
+    await page.goto("https://books.toscrape.com")
 ```
 
 ---
@@ -72,6 +115,7 @@ graph TD
 - Python 3.11+
 - Playwright (`playwright install chromium`)
 - Google Gemini API Key
+- Bright Data Account & API Key (for Scraper Studio integration)
 
 ### Installation
 
@@ -88,20 +132,20 @@ playwright install chromium
 
 # Configure environment
 cp .env.example .env
-# Open .env and add your GEMINI_API_KEY=...
+# Edit .env with your GEMINI_API_KEY and BRIGHT_DATA_API_KEY
 ```
 
 ---
 
-## Running the Scraper
+## Running & Testing
 
-### 1. Scrape a Web Page (CLI)
+### 1. Run the Scraper (CLI)
 ```bash
 python -m scraper.cli scrape https://books.toscrape.com/catalogue/a-light-in-the-attic_1000/index.html --domain books.toscrape.com
 ```
 
 ### 2. Run the Live AI Self-Healing Demo
-Simulates layout drift on a live target site by breaking a selector, then watches the Gemini AI agent detect, repair, cross-validate, and hot-reload the selector in real-time:
+Simulates layout drift on a live target site by injecting a broken selector, then invokes the Gemini AI agent to analyze the accessibility tree, cross-validate against holdout pages, and hot-reload the repaired locator:
 ```bash
 python scripts/test_healing.py
 ```
@@ -131,47 +175,39 @@ python -m scraper.cli metrics --port 9090
 
 ---
 
-## Configuration
+## Example Structured Output
 
-All configuration is version-controlled and lives in `config/`:
+Example output from [`examples/output/books_sample_output.json`](examples/output/books_sample_output.json):
 
-| File | Purpose |
-|---|---|
-| `config/scraping_postures.yaml` | Per-domain legal compliance posture (`strict_compliance` vs `adversarial_commercial`). |
-| `config/business_rules.yaml` | Field-level business validation rules (`gt`, `gte`, `min_length`, regex, etc.). |
-| `config/volatility_profiles.yaml` | Statistical anomaly volatility profiles (`low`=2σ, `medium`=3σ, `high`=5σ). |
-| `config/domains/*.yaml` | Target domain extraction schemas, rate limits, and holdout URLs. |
-
----
-
-## Replay & Calibration Scripts
-
-- **Idempotent Backfill Replay**: Re-processes quarantined snapshots after schema fixes:
-  ```bash
-  python scripts/backfill_replay.py --db data/scraper.db
-  ```
-- **Threshold Calibration**: Analyzes historical repair data to compute optimal precision/recall thresholds:
-  ```bash
-  python scripts/calibrate_threshold.py --db data/scraper.db
-  ```
-
----
-
-## Docker Deployment
-
-```bash
-cd docker
-docker-compose up -d
+```json
+{
+  "request_id": "req-9b8f2c10",
+  "domain": "books.toscrape.com",
+  "url": "https://books.toscrape.com/catalogue/a-light-in-the-attic_1000/index.html",
+  "status": "SUCCESS",
+  "extracted_data": {
+    "title": "A Light in the Attic",
+    "price": 51.77,
+    "currency": "GBP",
+    "availability": "In stock (22 available)",
+    "rating": "Three",
+    "description": "It's hard to imagine a world without A Light in the Attic..."
+  },
+  "validation": {
+    "type_checks_passed": true,
+    "business_rules_passed": true,
+    "statistical_anomaly_detected": false
+  },
+  "drift_detected": false,
+  "quarantined": false
+}
 ```
-Starts:
-- Web Scraper Worker
-- Redis 7 (Distributed Rate Limiter)
-- Prometheus Server (Port `9090`)
 
 ---
 
 ## Technology Stack
 
+- **Scraper Infrastructure & Proxy**: [Bright Data Scraper Studio](https://brightdata.com/) & Scraping Browser
 - **Browser Automation**: [Playwright Python](https://playwright.dev/python/)
 - **Data Validation**: [Pydantic v2](https://docs.pydantic.dev/)
 - **AI / LLM**: [Google Gemini](https://ai.google.dev/) (`google-genai`)

@@ -1,0 +1,37 @@
+{
+  "collection_id": "c_m489f20109",
+  "scraper_id": "custom_ecommerce_books_scraper",
+  "status": "ready",
+  "scraped_at": "2026-08-21T05:27:50Z",
+  "total_records": 3,
+  "bright_data_proxy_network": "Scraping Browser CDP / Web Unlocker",
+  "data": [
+    {
+      "url": "https://books.toscrape.com/catalogue/a-light-in-the-attic_1000/index.html",
+      "title": "A Light in the Attic",
+      "price": "£51.77",
+      "stock_status": "In stock",
+      "category": "Poetry",
+      "upc": "a8975240e141e00e",
+      "review_count": 0
+    },
+    {
+      "url": "https://books.toscrape.com/catalogue/tipping-the-velvet_999/index.html",
+      "title": "Tipping the Velvet",
+      "price": "£53.74",
+      "stock_status": "In stock",
+      "category": "Historical Fiction",
+      "upc": "90fa61a2926110f8",
+      "review_count": 0
+    },
+    {
+      "url": "https://books.toscrape.com/catalogue/soumission_998/index.html",
+      "title": "Soumission",
+      "price": "£50.10",
+      "stock_status": "In stock",
+      "category": "Fiction",
+      "upc": "6957f44c3847a760",
+      "review_count": 0
+    }
+  ]
+}
