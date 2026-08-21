@@ -87,24 +87,27 @@ class ConfidenceScorer:
             return 1.0
         return 0.0
 
-    def compute_confidence(self, proposed_ax_tree: str, proposed_text: str, proposed_role: Optional[str], proposed_value: str, lkg_snapshot: LKGSnapshot) -> float:
+    def compute_confidence(self, proposed_ax_tree: str, proposed_text: str, proposed_role: Optional[str], proposed_value: str, lkg_snapshot: Optional[LKGSnapshot]) -> float:
         w_struct = 0.3
         w_sem = 0.3
         w_role = 0.25
         w_val = 0.15
         
-        # Extract LKG strings
-        lkg_ax = lkg_snapshot.ax_tree_snapshot or ""
-        lkg_text = lkg_snapshot.content_hash or "" # Not quite text, but using hash as fallback or if available
-        # Assuming lkg_snapshot has some way to get text. If not, use whatever we have.
-        # In a real impl, we'd use lkg_snapshot.text if available.
-        lkg_role = None # Assuming LKG snapshot lacks role, or we pass it if it does
-        lkg_sample = ""
+        if not lkg_snapshot:
+            # When no prior baseline exists, award default base confidence
+            return 0.8
+        
+        # Extract LKG strings from real LKGSnapshot model fields
+        lkg_ax = lkg_snapshot.ax_tree_neighborhood or ""
+        lkg_text = lkg_snapshot.text_signature or ""
+        lkg_role = lkg_snapshot.strategy.value if lkg_snapshot.strategy else None
+        lkg_sample = str(lkg_snapshot.sample_value or "")
         
         score = 0.0
         score += w_struct * self.structural_similarity(proposed_ax_tree, lkg_ax)
-        score += w_sem * self.semantic_similarity(proposed_text, lkg_text)
+        score += w_sem * self.semantic_similarity(proposed_text or proposed_ax_tree, lkg_text)
         score += w_role * self.role_match_score(proposed_role, lkg_role)
-        score += w_val * self.value_format_match(proposed_value, lkg_sample)
+        score += w_val * self.value_format_match(proposed_value or proposed_text, lkg_sample)
         
         return min(max(score, 0.0), 1.0)
+

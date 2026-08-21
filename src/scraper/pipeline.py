@@ -17,6 +17,11 @@ import time
 from datetime import datetime, timezone
 from typing import Any
 
+from dotenv import load_dotenv
+
+# Load .env file automatically
+load_dotenv()
+
 import structlog
 import yaml
 from playwright.async_api import Browser, Playwright, async_playwright
