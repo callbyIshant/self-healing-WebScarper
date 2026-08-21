@@ -178,13 +178,7 @@ async def websocket_scrape(websocket: WebSocket):
                     
                     # Reload into pipeline
                     pipeline.domain_configs[domain] = domain_cfg
-                    for f in domain_cfg.fields:
-                        await pipeline.locator_registry.register_locator(
-                            domain=domain,
-                            field_name=f.name,
-                            selector=f.selector,
-                            strategy=f.strategy
-                        )
+                    pipeline.locator_registry.load_from_config(domain_cfg)
 
                     await websocket.send_json({
                         "type": "log",
