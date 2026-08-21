@@ -353,10 +353,20 @@ def bdata_approve(collector_id: str, reject: bool):
 @click.option('--no-browser', is_flag=True, default=False, help='Do not automatically open browser')
 def ui(port: int, host: str, no_browser: bool):
     """Launch the Claude/Codex-inspired interactive Web UI dashboard."""
+    import socket
     import uvicorn
     import webbrowser
 
-    url = f"http://{host}:{port}"
+    def find_free_port(start_port: int, max_attempts: int = 50) -> int:
+        for p in range(start_port, start_port + max_attempts):
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                if s.connect_ex((host, p)) != 0:
+                    return p
+        return start_port
+
+    active_port = find_free_port(port)
+    url = f"http://{host}:{active_port}"
+
     console.print(Panel(
         f"[bold cyan]Self-Healing Scraper UI Dashboard[/bold cyan]\n"
         f"Server running at: [bold green]{url}[/bold green]\n"
@@ -370,7 +380,7 @@ def ui(port: int, host: str, no_browser: bool):
         except Exception:
             pass
 
-    uvicorn.run("scraper.ui.server:app", host=host, port=port, log_level="info")
+    uvicorn.run("scraper.ui.server:app", host=host, port=active_port, log_level="info")
 
 
 if __name__ == '__main__':
