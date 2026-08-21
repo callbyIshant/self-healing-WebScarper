@@ -48,6 +48,7 @@ dependencies = [
 
     # Async utilities
     "anyio>=4.0.0",
+    "aiofiles>=24.0.0",
 ]
 
 [project.optional-dependencies]
