@@ -1,0 +1,35 @@
+domain: quotes.toscrape.com
+rate_limit:
+  requests_per_minute: 60
+  burst_capacity: 5
+fields:
+- name: quote_text
+  selector: .quote .text
+  strategy: css
+  field_type: string
+  volatility: low
+  required: false
+  description: The main text of the quote
+- name: author_name
+  selector: .quote .author
+  strategy: css
+  field_type: string
+  volatility: low
+  required: false
+  description: The author of the quote
+- name: author_link
+  selector: .quote a[href*='/author/']
+  strategy: css
+  field_type: url
+  volatility: low
+  required: false
+  description: URL to the author's biography page
+- name: tags
+  selector: .quote .tag
+  strategy: css
+  field_type: string
+  volatility: low
+  required: false
+  description: List of tags associated with the quote
+holdout_urls:
+- https://quotes.toscrape.com/

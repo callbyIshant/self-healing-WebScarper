@@ -31,6 +31,93 @@ def main():
 
 @main.command()
 @click.argument('url')
+@click.argument('prompt', required=False, default=None)
+@click.option('--config', default='config', help='Path to config directory')
+@click.option('--db', default='data/scraper.db', help='Path to SQLite database')
+def auto(url: str, prompt: str | None, config: str, db: str):
+    """Universal Scraper: Give ANY URL, it auto-generates schemas, runs the 9-layer pipeline, and auto-heals when layout changes."""
+    from urllib.parse import urlparse
+    from playwright.async_api import async_playwright
+    from scraper.healing.schema_generator import AutoSchemaGenerator
+
+    async def _run():
+        domain = urlparse(url).netloc.replace("www.", "")
+        safe_name = domain.replace(".", "_") + ".yaml"
+        config_file = os.path.join(config, "domains", safe_name)
+
+        if not os.path.exists(config_file):
+            console.print(Panel(f"[bold cyan]First time scraping {domain}[/bold cyan]\nAuto-analyzing accessibility tree to synthesize resilient schema...", border_style="cyan"))
+            
+            async with async_playwright() as p:
+                browser = await p.chromium.launch(headless=True)
+                page = await browser.new_page()
+                await page.goto(url, wait_until="domcontentloaded", timeout=20000)
+                ax_tree = await page.aria_snapshot()
+                await browser.close()
+
+            generator = AutoSchemaGenerator()
+            domain_config = await generator.generate_schema(url, ax_tree, user_prompt=prompt)
+            saved_path = generator.save_config(domain_config, config_dir=config)
+            console.print(f"[bold green][OK] Synthesized schema with {len(domain_config.fields)} fields saved to [yellow]{saved_path}[/yellow][/bold green]\n")
+
+        # Run the full 9-layer self-healing pipeline
+        pipeline = ScrapingPipeline(config_path=config, db_path=db)
+        await pipeline.initialize()
+
+        try:
+            request = ScrapingRequest(url=url, domain=domain)
+            console.print(f"[bold blue]Executing 9-Layer Extraction on[/bold blue] [cyan]{url}[/cyan]...")
+            response = await pipeline.scrape(request)
+
+            if response.success:
+                table = Table(title=f"Extracted Structured Data: {domain}", header_style="bold green")
+                table.add_column("Field", style="cyan", no_wrap=True)
+                table.add_column("Value", style="white")
+                table.add_column("Status", style="bold")
+
+                for k, v in response.fields.items():
+                    if k in response.quarantined_fields or v is None:
+                        status = "[red]QUARANTINED[/red]"
+                        val_str = "[dim italic]Nulled (Awaiting Review)[/dim italic]"
+                    else:
+                        status = "[green]SUCCESS[/green]"
+                        val_str = str(v)
+                    table.add_row(k, val_str, status)
+
+                console.print(table)
+                console.print()
+
+                if response.drift_events:
+                    drift_table = Table(title="AI Self-Healing Repair Report", header_style="bold magenta")
+                    drift_table.add_column("Field", style="cyan")
+                    drift_table.add_column("Old Selector", style="red")
+                    drift_table.add_column("Repaired Selector (Gemini)", style="green")
+                    drift_table.add_column("Confidence", style="magenta")
+                    drift_table.add_column("Outcome", style="bold")
+
+                    for event in response.drift_events:
+                        conf = f"{event.confidence_score:.1%}" if event.confidence_score is not None else "N/A"
+                        drift_table.add_row(
+                            event.field_name,
+                            event.old_selector,
+                            event.new_selector or "None",
+                            conf,
+                            f"[bold green]{event.outcome.value}[/bold green]" if event.auto_healed else f"[yellow]{event.outcome.value}[/yellow]"
+                        )
+                    console.print(drift_table)
+                    console.print()
+                else:
+                    console.print("[dim green]All locators matched cleanly. LKG baseline updated.[/dim green]\n")
+            else:
+                console.print(Panel(f"[bold red]Scrape failed:[/bold red] {response.error}", title="Pipeline Error", border_style="red"))
+        finally:
+            await pipeline.shutdown()
+
+    asyncio.run(_run())
+
+
+@main.command()
+@click.argument('url')
 @click.option('--domain', required=True, help='Target domain identifier (e.g. books.toscrape.com)')
 @click.option('--config', default='config', help='Path to config directory')
 @click.option('--db', default='data/scraper.db', help='Path to SQLite database')
