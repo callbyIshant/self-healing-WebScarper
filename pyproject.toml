@@ -46,6 +46,11 @@ dependencies = [
     "click>=8.1.0",
     "rich>=13.0.0",
 
+    # Web UI Dashboard
+    "fastapi>=0.115.0",
+    "uvicorn>=0.32.0",
+    "websockets>=13.0",
+
     # Async utilities
     "anyio>=4.0.0",
     "aiofiles>=24.0.0",

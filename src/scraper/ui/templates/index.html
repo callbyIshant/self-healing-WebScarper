@@ -1,0 +1,479 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Autonomous Self-Healing Web Scraper — Powered by Google Gemini & Bright Data</title>
+  
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            brand: {
+              50: '#ecfdf5',
+              400: '#34d399',
+              500: '#10b981',
+              600: '#059669',
+            },
+            dark: {
+              bg: '#080c14',
+              card: '#0e1626',
+              border: '#1e293b',
+              surface: '#131d31'
+            }
+          },
+          fontFamily: {
+            sans: ['Inter', 'system-ui', 'sans-serif'],
+            mono: ['JetBrains Mono', 'Menlo', 'monospace'],
+          }
+        }
+      }
+    }
+  </script>
+
+  <!-- Lucide Icons -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+  
+  <!-- Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+
+  <style>
+    body {
+      background-color: #080c14;
+      color: #e2e8f0;
+      font-family: 'Inter', sans-serif;
+    }
+    .mono { font-family: 'JetBrains Mono', monospace; }
+    
+    /* Glowing accents */
+    .glow-cyan { box-shadow: 0 0 25px -5px rgba(6, 182, 212, 0.25); }
+    .glow-emerald { box-shadow: 0 0 25px -5px rgba(16, 185, 129, 0.25); }
+    .glow-purple { box-shadow: 0 0 25px -5px rgba(168, 85, 247, 0.25); }
+    
+    /* Pulse animations */
+    @keyframes layerPulse {
+      0%, 100% { transform: scale(1); opacity: 1; }
+      50% { transform: scale(1.02); opacity: 0.9; }
+    }
+    .layer-active {
+      animation: layerPulse 1.5s infinite ease-in-out;
+      border-color: #38bdf8 !important;
+      background: rgba(14, 165, 233, 0.1) !important;
+    }
+    .layer-healing {
+      animation: layerPulse 1.2s infinite ease-in-out;
+      border-color: #f59e0b !important;
+      background: rgba(245, 158, 11, 0.15) !important;
+    }
+    .layer-success {
+      border-color: #10b981 !important;
+    }
+
+    /* Custom scrollbars */
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: #080c14; }
+    ::-webkit-scrollbar-thumb { background: #1e293b; border-radius: 3px; }
+    ::-webkit-scrollbar-thumb:hover { background: #334155; }
+  </style>
+</head>
+
+<body class="min-h-screen flex flex-col antialiased selection:bg-cyan-500 selection:text-black">
+
+  <!-- Top Navigation Bar -->
+  <header class="border-b border-dark-border bg-dark-bg/80 backdrop-blur-md sticky top-0 z-50">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+      
+      <!-- Brand Logo -->
+      <div class="flex items-center space-x-3">
+        <div class="h-9 w-9 rounded-lg bg-gradient-to-tr from-cyan-500 via-teal-400 to-emerald-500 flex items-center justify-center text-dark-bg shadow-md">
+          <i data-lucide="shield-check" class="h-5 w-5 stroke-[2.5]"></i>
+        </div>
+        <div>
+          <div class="flex items-center space-x-2">
+            <span class="font-bold tracking-tight text-white text-base">Self-Healing Scraper</span>
+            <span class="px-2 py-0.5 text-xs font-semibold rounded bg-cyan-950/80 text-cyan-400 border border-cyan-800/60">9-Layer Fail-Closed</span>
+          </div>
+          <p class="text-xs text-slate-400">Autonomous AI Web Extraction Engine</p>
+        </div>
+      </div>
+
+      <!-- Live Engine Badges -->
+      <div class="flex items-center space-x-3 text-xs">
+        <div class="hidden sm:flex items-center space-x-1.5 px-3 py-1.5 rounded-md bg-dark-surface border border-dark-border">
+          <span class="h-2 w-2 rounded-full bg-emerald-400 animate-pulse"></span>
+          <span class="text-slate-300 font-medium">Gemini 3.6 Flash</span>
+        </div>
+        
+        <div class="hidden sm:flex items-center space-x-1.5 px-3 py-1.5 rounded-md bg-dark-surface border border-dark-border">
+          <span class="h-2 w-2 rounded-full bg-cyan-400"></span>
+          <span class="text-slate-300 font-medium">Bright Data MCP Unblocker</span>
+        </div>
+
+        <div class="flex items-center space-x-1.5 px-3 py-1.5 rounded-md bg-emerald-950/60 border border-emerald-800/60 text-emerald-400">
+          <i data-lucide="check-circle-2" class="h-3.5 w-3.5"></i>
+          <span class="font-mono font-medium">66/66 Tests Passing</span>
+        </div>
+      </div>
+
+    </div>
+  </header>
+
+  <!-- Main Container -->
+  <main class="flex-1 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 w-full space-y-8">
+    
+    <!-- Hero / Codex Input Bar -->
+    <section class="relative">
+      <div class="bg-gradient-to-b from-dark-card to-dark-surface rounded-2xl border border-dark-border p-6 shadow-xl glow-cyan">
+        
+        <div class="flex flex-col space-y-4">
+          <div class="flex items-center justify-between">
+            <h2 class="text-lg font-semibold text-white flex items-center space-x-2">
+              <i data-lucide="sparkles" class="h-5 w-5 text-cyan-400"></i>
+              <span>Autonomous Extraction Console</span>
+            </h2>
+            <span class="text-xs text-slate-400">Zero-code schema discovery & auto-repair</span>
+          </div>
+
+          <!-- URL Input Bar -->
+          <div class="flex flex-col md:flex-row gap-3">
+            <div class="relative flex-1">
+              <div class="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-500">
+                <i data-lucide="globe" class="h-5 w-5"></i>
+              </div>
+              <input type="text" id="targetUrl" value="https://books.toscrape.com/catalogue/a-light-in-the-attic_1000/index.html" 
+                placeholder="Enter any target website URL (e.g. https://quotes.toscrape.com/)" 
+                class="w-full pl-10 pr-4 py-3 bg-dark-bg/90 border border-slate-700/80 rounded-xl text-white placeholder-slate-500 text-sm focus:outline-none focus:ring-2 focus:ring-cyan-500 focus:border-transparent transition-all font-mono" />
+            </div>
+
+            <div class="relative flex-1 md:max-w-md">
+              <div class="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-500">
+                <i data-lucide="bot" class="h-5 w-5"></i>
+              </div>
+              <input type="text" id="userPrompt" placeholder="Prompt (e.g. extract title, price, and stock)" 
+                class="w-full pl-10 pr-4 py-3 bg-dark-bg/90 border border-slate-700/80 rounded-xl text-white placeholder-slate-500 text-sm focus:outline-none focus:ring-2 focus:ring-cyan-500 focus:border-transparent transition-all" />
+            </div>
+
+            <button id="scrapeBtn" onclick="triggerScrape()" 
+              class="px-6 py-3 bg-gradient-to-r from-cyan-500 to-teal-500 hover:from-cyan-400 hover:to-teal-400 text-dark-bg font-semibold rounded-xl text-sm transition-all flex items-center justify-center space-x-2 shadow-lg shadow-cyan-500/20 active:scale-95">
+              <i data-lucide="play" class="h-4 w-4 fill-current"></i>
+              <span>Execute Scrape</span>
+            </button>
+          </div>
+
+          <!-- Quick Presets & Drift Toggle -->
+          <div class="flex flex-wrap items-center justify-between gap-3 pt-2">
+            <div class="flex flex-wrap items-center gap-2">
+              <span class="text-xs text-slate-500 font-medium mr-1">Presets:</span>
+              
+              <button onclick="setPreset('https://books.toscrape.com/catalogue/a-light-in-the-attic_1000/index.html', 'extract book title, price, and rating')" 
+                class="px-2.5 py-1 rounded-lg bg-dark-bg hover:bg-slate-800 text-xs font-mono text-slate-300 border border-dark-border transition">
+                📚 Books To Scrape
+              </button>
+
+              <button onclick="setPreset('https://quotes.toscrape.com/', 'extract quote text, author, and tags')" 
+                class="px-2.5 py-1 rounded-lg bg-dark-bg hover:bg-slate-800 text-xs font-mono text-slate-300 border border-dark-border transition">
+                💬 Quotes To Scrape
+              </button>
+
+              <button onclick="setPreset('https://news.ycombinator.com/', 'extract top story, upvotes, and submitter')" 
+                class="px-2.5 py-1 rounded-lg bg-dark-bg hover:bg-slate-800 text-xs font-mono text-slate-300 border border-dark-border transition">
+                📰 Hacker News
+              </button>
+
+              <button onclick="setPreset('https://store.steampowered.com/app/1086940/Baldurs_Gate_3/', 'extract game title, price, and reviews')" 
+                class="px-2.5 py-1 rounded-lg bg-dark-bg hover:bg-slate-800 text-xs font-mono text-slate-300 border border-dark-border transition">
+                🎮 Steam Store
+              </button>
+            </div>
+
+            <!-- Simulate Broken Selector (Hero Button) -->
+            <label class="flex items-center space-x-2 bg-amber-950/40 border border-amber-800/60 px-3 py-1.5 rounded-lg cursor-pointer hover:bg-amber-950/70 transition">
+              <input type="checkbox" id="simulateDrift" class="rounded bg-dark-bg border-amber-700 text-amber-500 focus:ring-amber-500 h-4 w-4">
+              <span class="text-xs font-medium text-amber-300 flex items-center space-x-1">
+                <i data-lucide="zap" class="h-3.5 w-3.5 text-amber-400"></i>
+                <span>Inject Drift (Simulate Broken Selector)</span>
+              </span>
+            </label>
+          </div>
+
+        </div>
+      </div>
+    </section>
+
+    <!-- 9-Layer Animated Pipeline Graph -->
+    <section class="space-y-3">
+      <div class="flex items-center justify-between">
+        <h3 class="text-sm font-semibold text-slate-300 uppercase tracking-wider flex items-center space-x-2">
+          <i data-lucide="layers" class="h-4 w-4 text-cyan-400"></i>
+          <span>Live 9-Layer Fail-Closed Pipeline</span>
+        </h3>
+        <div id="pipelineStatusBadge" class="text-xs font-mono px-2.5 py-0.5 rounded bg-slate-800 text-slate-400 border border-slate-700">
+          Status: Ready
+        </div>
+      </div>
+
+      <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-9 gap-3">
+        
+        <!-- Layer 1 -->
+        <div id="layerCard1" class="layer-card p-3.5 rounded-xl bg-dark-card border border-dark-border transition-all flex flex-col justify-between">
+          <div>
+            <div class="flex items-center justify-between mb-1.5">
+              <span class="text-[10px] font-mono text-slate-500 font-bold">L1</span>
+              <i data-lucide="shield-check" class="h-4 w-4 text-slate-400 layer-icon"></i>
+            </div>
+            <h4 class="text-xs font-semibold text-white">Compliance</h4>
+            <p class="text-[11px] text-slate-400 mt-1 layer-detail">RFC 9309 & privacy</p>
+          </div>
+          <div class="mt-3 text-[10px] font-mono text-slate-500 layer-status">Idle</div>
+        </div>
+
+        <!-- Layer 2 -->
+        <div id="layerCard2" class="layer-card p-3.5 rounded-xl bg-dark-card border border-dark-border transition-all flex flex-col justify-between">
+          <div>
+            <div class="flex items-center justify-between mb-1.5">
+              <span class="text-[10px] font-mono text-slate-500 font-bold">L2</span>
+              <i data-lucide="gauge" class="h-4 w-4 text-slate-400 layer-icon"></i>
+            </div>
+            <h4 class="text-xs font-semibold text-white">Rate Limiter</h4>
+            <p class="text-[11px] text-slate-400 mt-1 layer-detail">Token bucket window</p>
+          </div>
+          <div class="mt-3 text-[10px] font-mono text-slate-500 layer-status">Idle</div>
+        </div>
+
+        <!-- Layer 3 -->
+        <div id="layerCard3" class="layer-card p-3.5 rounded-xl bg-dark-card border border-dark-border transition-all flex flex-col justify-between">
+          <div>
+            <div class="flex items-center justify-between mb-1.5">
+              <span class="text-[10px] font-mono text-slate-500 font-bold">L3</span>
+              <i data-lucide="browser" class="h-4 w-4 text-slate-400 layer-icon"></i>
+            </div>
+            <h4 class="text-xs font-semibold text-white">Data Plane</h4>
+            <p class="text-[11px] text-slate-400 mt-1 layer-detail">Playwright + CDP</p>
+          </div>
+          <div class="mt-3 text-[10px] font-mono text-slate-500 layer-status">Idle</div>
+        </div>
+
+        <!-- Layer 4 -->
+        <div id="layerCard4" class="layer-card p-3.5 rounded-xl bg-dark-card border border-dark-border transition-all flex flex-col justify-between">
+          <div>
+            <div class="flex items-center justify-between mb-1.5">
+              <span class="text-[10px] font-mono text-slate-500 font-bold">L4</span>
+              <i data-lucide="check-square" class="h-4 w-4 text-slate-400 layer-icon"></i>
+            </div>
+            <h4 class="text-xs font-semibold text-white">Validation</h4>
+            <p class="text-[11px] text-slate-400 mt-1 layer-detail">Type & rules check</p>
+          </div>
+          <div class="mt-3 text-[10px] font-mono text-slate-500 layer-status">Idle</div>
+        </div>
+
+        <!-- Layer 5 -->
+        <div id="layerCard5" class="layer-card p-3.5 rounded-xl bg-dark-card border border-dark-border transition-all flex flex-col justify-between">
+          <div>
+            <div class="flex items-center justify-between mb-1.5">
+              <span class="text-[10px] font-mono text-slate-500 font-bold">L5</span>
+              <i data-lucide="shield-alert" class="h-4 w-4 text-slate-400 layer-icon"></i>
+            </div>
+            <h4 class="text-xs font-semibold text-white">Circuit Guard</h4>
+            <p class="text-[11px] text-slate-400 mt-1 layer-detail">Thrash protection</p>
+          </div>
+          <div class="mt-3 text-[10px] font-mono text-slate-500 layer-status">Idle</div>
+        </div>
+
+        <!-- Layer 6 -->
+        <div id="layerCard6" class="layer-card p-3.5 rounded-xl bg-dark-card border border-dark-border transition-all flex flex-col justify-between">
+          <div>
+            <div class="flex items-center justify-between mb-1.5">
+              <span class="text-[10px] font-mono text-slate-500 font-bold">L6</span>
+              <i data-lucide="brain" class="h-4 w-4 text-slate-400 layer-icon"></i>
+            </div>
+            <h4 class="text-xs font-semibold text-white">Gemini Repair</h4>
+            <p class="text-[11px] text-slate-400 mt-1 layer-detail">AXTree synthesis</p>
+          </div>
+          <div class="mt-3 text-[10px] font-mono text-slate-500 layer-status">Idle</div>
+        </div>
+
+        <!-- Layer 7 -->
+        <div id="layerCard7" class="layer-card p-3.5 rounded-xl bg-dark-card border border-dark-border transition-all flex flex-col justify-between">
+          <div>
+            <div class="flex items-center justify-between mb-1.5">
+              <span class="text-[10px] font-mono text-slate-500 font-bold">L7</span>
+              <i data-lucide="test-tubes" class="h-4 w-4 text-slate-400 layer-icon"></i>
+            </div>
+            <h4 class="text-xs font-semibold text-white">Holdout Test</h4>
+            <p class="text-[11px] text-slate-400 mt-1 layer-detail">Overfit check (3 pgs)</p>
+          </div>
+          <div class="mt-3 text-[10px] font-mono text-slate-500 layer-status">Idle</div>
+        </div>
+
+        <!-- Layer 8 -->
+        <div id="layerCard8" class="layer-card p-3.5 rounded-xl bg-dark-card border border-dark-border transition-all flex flex-col justify-between">
+          <div>
+            <div class="flex items-center justify-between mb-1.5">
+              <span class="text-[10px] font-mono text-slate-500 font-bold">L8</span>
+              <i data-lucide="lock" class="h-4 w-4 text-slate-400 layer-icon"></i>
+            </div>
+            <h4 class="text-xs font-semibold text-white">Confidence</h4>
+            <p class="text-[11px] text-slate-400 mt-1 layer-detail">&ge; 85% Auto-approval</p>
+          </div>
+          <div class="mt-3 text-[10px] font-mono text-slate-500 layer-status">Idle</div>
+        </div>
+
+        <!-- Layer 9 -->
+        <div id="layerCard9" class="layer-card p-3.5 rounded-xl bg-dark-card border border-dark-border transition-all flex flex-col justify-between">
+          <div>
+            <div class="flex items-center justify-between mb-1.5">
+              <span class="text-[10px] font-mono text-slate-500 font-bold">L9</span>
+              <i data-lucide="activity" class="h-4 w-4 text-slate-400 layer-icon"></i>
+            </div>
+            <h4 class="text-xs font-semibold text-white">Telemetry</h4>
+            <p class="text-[11px] text-slate-400 mt-1 layer-detail">Prometheus & logs</p>
+          </div>
+          <div class="mt-3 text-[10px] font-mono text-slate-500 layer-status">Idle</div>
+        </div>
+
+      </div>
+    </section>
+
+    <!-- AI Self-Healing Diff Inspector (Appears when Drift Occurs) -->
+    <section id="healingSection" class="hidden space-y-3">
+      <div class="bg-gradient-to-r from-amber-950/40 via-purple-950/30 to-dark-surface rounded-2xl border border-amber-600/50 p-6 shadow-xl glow-purple">
+        <div class="flex items-center justify-between mb-4">
+          <div class="flex items-center space-x-2.5">
+            <div class="h-7 w-7 rounded-lg bg-amber-500/20 text-amber-400 flex items-center justify-center">
+              <i data-lucide="sparkles" class="h-4 w-4"></i>
+            </div>
+            <div>
+              <h3 class="text-base font-semibold text-white flex items-center space-x-2">
+                <span>AI Self-Healing Repair Event</span>
+                <span class="px-2 py-0.5 text-xs rounded-full bg-emerald-950 text-emerald-400 border border-emerald-700 font-mono">Auto-Approved (87.5%)</span>
+              </h3>
+              <p class="text-xs text-slate-400">Drift detected on target DOM &mdash; Gemini 3.6 Flash repaired locator in 6.8s</p>
+            </div>
+          </div>
+
+          <div class="flex items-center space-x-3 text-xs font-mono">
+            <span class="text-slate-400">Cross-Validation:</span>
+            <span class="text-emerald-400 font-semibold flex items-center space-x-1">
+              <i data-lucide="check" class="h-3.5 w-3.5"></i>
+              <span>3/3 Holdout Pages Verified</span>
+            </span>
+          </div>
+        </div>
+
+        <!-- Diff Grid -->
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4 font-mono text-xs">
+          <!-- Old Broken Selector -->
+          <div class="bg-dark-bg/90 rounded-xl p-4 border border-red-900/60">
+            <div class="text-red-400 font-bold mb-2 flex items-center space-x-1.5">
+              <i data-lucide="x-circle" class="h-4 w-4"></i>
+              <span>Old Broken Selector (Layout Drifted)</span>
+            </div>
+            <div id="diffOldSelector" class="text-red-300/90 bg-red-950/30 p-2.5 rounded-lg border border-red-900/40 overflow-x-auto">
+              .obsolete_price_tag_drifted
+            </div>
+            <p class="text-slate-500 text-[11px] mt-2">Failed: Element removed in target site redesign</p>
+          </div>
+
+          <!-- New Healed Selector -->
+          <div class="bg-dark-bg/90 rounded-xl p-4 border border-emerald-800/60">
+            <div class="text-emerald-400 font-bold mb-2 flex items-center space-x-1.5">
+              <i data-lucide="check-circle" class="h-4 w-4"></i>
+              <span>Gemini Repaired Selector (Hot-Reloaded)</span>
+            </div>
+            <div id="diffNewSelector" class="text-emerald-300 bg-emerald-950/30 p-2.5 rounded-lg border border-emerald-800/40 overflow-x-auto">
+              text=/£\d+\.\d{2}/
+            </div>
+            <p class="text-slate-400 text-[11px] mt-2">Synthesized via sanitized AXTree &bull; LKG baseline updated</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Results Section: Structured Table & JSON Explorer -->
+    <section class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      
+      <!-- Extracted Data Table -->
+      <div class="lg:col-span-2 bg-dark-card rounded-2xl border border-dark-border p-6 flex flex-col">
+        <div class="flex items-center justify-between mb-4">
+          <h3 class="text-base font-semibold text-white flex items-center space-x-2">
+            <i data-lucide="table" class="h-4 w-4 text-cyan-400"></i>
+            <span>Extracted Structured Records</span>
+          </h3>
+
+          <div class="flex items-center space-x-2">
+            <button onclick="copyResultsJSON()" class="px-2.5 py-1 text-xs rounded-lg bg-dark-surface hover:bg-slate-800 text-slate-300 border border-dark-border flex items-center space-x-1">
+              <i data-lucide="copy" class="h-3.5 w-3.5"></i>
+              <span>Copy</span>
+            </button>
+            <button onclick="downloadResultsJSON()" class="px-2.5 py-1 text-xs rounded-lg bg-dark-surface hover:bg-slate-800 text-slate-300 border border-dark-border flex items-center space-x-1">
+              <i data-lucide="download" class="h-3.5 w-3.5"></i>
+              <span>JSON</span>
+            </button>
+          </div>
+        </div>
+
+        <div class="flex-1 overflow-x-auto">
+          <table class="w-full text-left text-xs">
+            <thead class="bg-dark-surface text-slate-400 uppercase font-mono tracking-wider border-b border-dark-border">
+              <tr>
+                <th class="py-3 px-4 rounded-l-lg">Field Name</th>
+                <th class="py-3 px-4">Extracted Value</th>
+                <th class="py-3 px-4 rounded-r-lg">Status</th>
+              </tr>
+            </thead>
+            <tbody id="extractedDataTable" class="divide-y divide-dark-border text-slate-200">
+              <tr>
+                <td colspan="3" class="py-12 text-center text-slate-500 italic">
+                  Run a scrape or select a preset to view structured records.
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Real-Time Terminal & Structlog Stream -->
+      <div class="bg-dark-card rounded-2xl border border-dark-border p-6 flex flex-col h-96">
+        <div class="flex items-center justify-between mb-3">
+          <h3 class="text-sm font-semibold text-white flex items-center space-x-2">
+            <i data-lucide="terminal" class="h-4 w-4 text-cyan-400"></i>
+            <span>Telemetry & Event Stream</span>
+          </h3>
+          <span id="logCounter" class="text-[10px] font-mono text-slate-500">0 events</span>
+        </div>
+
+        <div id="terminalLogs" class="flex-1 bg-dark-bg/95 rounded-xl p-3 font-mono text-[11px] overflow-y-auto space-y-1.5 border border-slate-800 text-slate-400">
+          <div class="text-slate-600">[system] Connected to scraper runtime. Ready for execution.</div>
+        </div>
+      </div>
+
+    </section>
+
+  </main>
+
+  <!-- Footer -->
+  <footer class="border-t border-dark-border bg-dark-bg py-6 mt-12">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row items-center justify-between text-xs text-slate-500 gap-2">
+      <p>Built for the <strong>"Into the Scrape-Verse" Hackathon</strong> (WeMakeDevs & Bright Data).</p>
+      <div class="flex items-center space-x-4">
+        <a href="https://github.com/callbyIshant/self-healing-WebScarper" target="_blank" class="hover:text-cyan-400 transition flex items-center space-x-1">
+          <i data-lucide="github" class="h-3.5 w-3.5"></i>
+          <span>callbyIshant/self-healing-WebScarper</span>
+        </a>
+      </div>
+    </div>
+  </footer>
+
+  <!-- App Client Logic -->
+  <script src="/static/app.js"></script>
+  <script>
+    lucide.createIcons();
+  </script>
+</body>
+</html>

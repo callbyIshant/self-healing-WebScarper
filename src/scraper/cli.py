@@ -347,6 +347,32 @@ def bdata_approve(collector_id: str, reject: bool):
     asyncio.run(_run())
 
 
+@main.command()
+@click.option('--port', default=8000, help='Port to serve dashboard on')
+@click.option('--host', default='127.0.0.1', help='Host to bind server')
+@click.option('--no-browser', is_flag=True, default=False, help='Do not automatically open browser')
+def ui(port: int, host: str, no_browser: bool):
+    """Launch the Claude/Codex-inspired interactive Web UI dashboard."""
+    import uvicorn
+    import webbrowser
+
+    url = f"http://{host}:{port}"
+    console.print(Panel(
+        f"[bold cyan]Self-Healing Scraper UI Dashboard[/bold cyan]\n"
+        f"Server running at: [bold green]{url}[/bold green]\n"
+        f"Real-time 9-Layer Visualizer & AI Repair Inspector",
+        border_style="cyan"
+    ))
+
+    if not no_browser:
+        try:
+            webbrowser.open(url)
+        except Exception:
+            pass
+
+    uvicorn.run("scraper.ui.server:app", host=host, port=port, log_level="info")
+
+
 if __name__ == '__main__':
     main()
 

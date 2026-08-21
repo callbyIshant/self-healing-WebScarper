@@ -139,18 +139,26 @@ cp .env.example .env
 
 ## Running & Testing
 
-### 1. Run the Scraper (CLI)
+### 1. Launch the Interactive Web UI Dashboard (Recommended)
+Launch the modern Claude/Codex-inspired web dashboard featuring real-time 9-layer visual progression, live AI repair diffs, and universal prompt bar:
 ```bash
-python -m scraper.cli scrape https://books.toscrape.com/catalogue/a-light-in-the-attic_1000/index.html --domain books.toscrape.com
+python -m scraper.cli ui
+```
+*Opens automatically at `http://localhost:8000`.*
+
+### 2. Universal Zero-Code Scraper (CLI)
+Point to **any URL** on the internet — auto-synthesizes schemas via Gemini and runs the 9-layer self-healing pipeline:
+```bash
+python -m scraper.cli auto https://quotes.toscrape.com/ "extract quote text, author, and tags"
 ```
 
-### 2. Run the Live AI Self-Healing Demo
+### 3. Run the Live AI Self-Healing Demo (Hero Demo for Judges)
 Simulates layout drift on a live target site by injecting a broken selector, then invokes the Gemini AI agent to analyze the accessibility tree, cross-validate against holdout pages, and hot-reload the repaired locator:
 ```bash
 python scripts/test_healing.py
 ```
 
-### 3. Run the Automated Test Suite (66 Tests)
+### 4. Run the Automated Test Suite (66 Tests)
 ```bash
 python -m pytest tests/ -v
 ```
