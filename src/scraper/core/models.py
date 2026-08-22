@@ -50,6 +50,19 @@ class DomainConfig(BaseModel):
     holdout_urls: list[str] = Field(default_factory=list, min_length=0)
     posture: ScrapingPosture = ScrapingPosture.STRICT_COMPLIANCE
     manifest_path: Optional[str] = None
+    multi_item: bool = Field(
+        default=False,
+        description="True for listing pages (search results, storefronts) with multiple repeated entities",
+    )
+    item_container: Optional[str] = Field(
+        default=None,
+        description="CSS selector for the repeating item card container (required when multi_item=True)",
+    )
+    scroll_count: int = Field(
+        default=0,
+        ge=0,
+        description="Number of scroll steps to trigger lazy-loading (0 = no scrolling)",
+    )
 
 
 class BusinessRule(BaseModel):
@@ -293,6 +306,10 @@ class ScrapingResponse(BaseModel):
     url: str
     domain: str
     fields: dict[str, Any] = Field(default_factory=dict)
+    items: list[dict[str, Any]] = Field(
+        default_factory=list,
+        description="List of extracted item dicts for multi-item (listing) pages",
+    )
     quarantined_fields: list[str] = Field(default_factory=list)
     extraction_results: list[ExtractionResult] = Field(default_factory=list)
     validation_results: list[ValidationResult] = Field(default_factory=list)

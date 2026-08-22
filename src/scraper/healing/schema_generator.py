@@ -22,15 +22,27 @@ logger = structlog.get_logger(__name__)
 
 
 class InferredField(BaseModel):
-    name: str = Field(description="Normalized snake_case field name, e.g. title, price, rating")
-    selector: str = Field(description="Playwright CSS or text selector")
+    name: str = Field(description="Normalized snake_case field name, e.g. title, price, rating, review_count, product_url")
+    selector: str = Field(description="Playwright CSS or text selector (relative to item card if multi_item is True)")
     strategy: str = Field(default="css", description="Selector strategy: css, text, role, or xpath")
     field_type: str = Field(default="string", description="Type: string, float, int, date, or url")
     description: str = Field(description="Brief explanation of the field")
 
 
 class InferredSchema(BaseModel):
-    fields: List[InferredField] = Field(description="List of detected data fields")
+    multi_item: bool = Field(
+        default=False,
+        description="True if this page is a product listing, catalog, search results, or storefront containing multiple repeated items/cards; False if it is a single-entity page (e.g. single product details)",
+    )
+    item_container: Optional[str] = Field(
+        default=None,
+        description="CSS selector for the repeating item card container when multi_item is True (e.g. '[role=\"group\"] > [role=\"listitem\"]', '[role=\"listitem\"]', '.s-result-item', '.product-card', 'li')",
+    )
+    scroll_count: int = Field(
+        default=0,
+        description="Recommended number of scroll steps (e.g. 8-12) to trigger lazy-loaded carousels or infinite scroll, or 0 if static",
+    )
+    fields: List[InferredField] = Field(description="List of detected data fields (relative to item container if multi_item)")
     rate_limit_rpm: int = Field(default=30, description="Recommended safe requests per minute")
 
 
@@ -57,16 +69,27 @@ class AutoSchemaGenerator:
 
 Target URL: {url}
 Target Domain: {domain}
-User Request / Focus Fields: {user_prompt or "Extract all primary entity fields (e.g. title/name, price/cost, description, rating, author/company, date)"}
+User Request / Focus Fields: {user_prompt or "Extract all primary entity fields (e.g. title/name, price/cost, description, rating, review count, product URL)"}
 
 Accessibility Tree Snapshot:
 <untrusted_scraped_content>
-{ax_tree[:8000]}
+{ax_tree[:10000]}
 </untrusted_scraped_content>
 
-Generate a clean list of fields with reliable CSS or Playwright text selectors (e.g. 'h1', '.price', 'text=/.../').
+CRITICAL INSTRUCTIONS:
+1. Determine if this is a MULTI-ITEM listing page (e.g., storefront, search results, category catalog with multiple products/items) or a SINGLE-ITEM page (e.g. a single product/article page).
+2. If MULTI-ITEM:
+   - Set multi_item = true.
+   - Specify item_container (e.g. '[role="group"] > [role="listitem"]', '[role="listitem"]', '.s-result-item', 'li').
+   - Set scroll_count = 10 if the page uses lazy-loading carousels or infinite scrolling.
+   - Field selectors MUST be relative to the item container card (e.g., 'a[href*="/dp/"]' for title/URL, '.a-price' or specific text patterns for price/rating).
+3. If SINGLE-ITEM:
+   - Set multi_item = false, item_container = null, scroll_count = 0.
+   - Field selectors should be page-level selectors.
+4. For URLs/links, set field_type = "url" (the extraction engine will automatically pull the href attribute).
+5. For prices/numbers/ratings, choose appropriate field_types ("string", "float", "int", "url").
 """
-        model_name = os.environ.get("GEMINI_MODEL", "gemini-3.6-flash")
+        model_name = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash")
         
         response = self.client.models.generate_content(
             model=model_name,
@@ -101,7 +124,7 @@ Generate a clean list of fields with reliable CSS or Playwright text selectors (
                     strategy=strat,
                     field_type=f.field_type.lower(),
                     volatility=VolatilityProfile.LOW,
-                    required=True if f.name in ("title", "name", "price") else False,
+                    required=True if f.name in ("title", "name", "price", "product_title") else False,
                     description=f.description,
                 )
             )
@@ -113,6 +136,9 @@ Generate a clean list of fields with reliable CSS or Playwright text selectors (
             fields=field_defs,
             holdout_urls=[url],
             posture=ScrapingPosture.STRICT_COMPLIANCE,
+            multi_item=schema_data.multi_item,
+            item_container=schema_data.item_container,
+            scroll_count=schema_data.scroll_count,
         )
 
         return domain_config
@@ -129,6 +155,9 @@ Generate a clean list of fields with reliable CSS or Playwright text selectors (
 
         data = {
             "domain": config.domain,
+            "multi_item": config.multi_item,
+            "item_container": config.item_container,
+            "scroll_count": config.scroll_count,
             "rate_limit": {
                 "requests_per_minute": config.rate_limit_rpm,
                 "burst_capacity": config.burst_capacity,

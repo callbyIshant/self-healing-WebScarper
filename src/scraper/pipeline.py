@@ -118,9 +118,11 @@ class ScrapingPipeline:
         redis_url: str | None = None,
         cold_storage_path: str = "data/cold_storage",
         gemini_api_key: str | None = None,
+        headless: bool = False,
     ) -> None:
         self.config_path = config_path
         self.db_path = db_path
+        self.headless = headless
 
         # Storage
         self.sqlite_store = SQLiteStore(db_path)
@@ -236,7 +238,13 @@ class ScrapingPipeline:
 
         # Playwright
         self._playwright = await async_playwright().start()
-        self._browser = await self._playwright.chromium.launch(headless=True)
+        self._browser = await self._playwright.chromium.launch(
+            headless=self.headless,
+            args=[
+                "--disable-blink-features=AutomationControlled",
+                "--no-sandbox",
+            ],
+        )
 
         logger.info("pipeline_initialized", domains=list(self.domain_configs.keys()))
 
@@ -300,250 +308,454 @@ class ScrapingPipeline:
                 raise RateLimitExceededError(domain, wait)
 
             # ── Step 2: Deterministic Extraction ──
-            context = await self._browser.new_context()
+            context = await self._browser.new_context(
+                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+                viewport={"width": 1920, "height": 1080},
+                locale="en-US",
+            )
             page = await context.new_page()
+            await page.add_init_script("delete Object.getPrototypeOf(navigator).webdriver")
+
             try:
                 await page.goto(url, wait_until="domcontentloaded", timeout=30000)
+                page_title = await page.title()
+                logger.info("page_navigated", title=page_title, url=page.url)
 
-                extraction_results = await self.data_plane.extract_page(
-                    page, domain_config
-                )
-                response.extraction_results = extraction_results
+                # ── Multi-Item Branch ──
+                if domain_config.multi_item and domain_config.item_container:
+                    # Wait for initial JS/React rendering before scrolling
+                    await page.wait_for_timeout(3000)
 
-                failed_fields: list[ExtractionResult] = []
-                successful_fields: list[ExtractionResult] = []
+                    # Scroll to load lazy content
+                    scroll_steps = domain_config.scroll_count or 10
+                    await self.data_plane.scroll_to_load(page, scroll_count=scroll_steps)
 
-                for result in extraction_results:
-                    if result.success:
-                        successful_fields.append(result)
-                        response.fields[result.field_name] = result.value
-                    else:
-                        failed_fields.append(result)
-
-                # ── Step 3: Update LKG for successful extractions ──
-                for result in successful_fields:
-                    try:
-                        ax_neighborhood = await self.data_plane.capture_aria_snapshot(
-                            page, result.selector_used
-                        )
-                        snapshot = LKGSnapshot(
-                            domain=domain,
-                            field_name=result.field_name,
-                            selector=result.selector_used,
-                            strategy=result.strategy,
-                            ax_tree_neighborhood=ax_neighborhood,
-                            text_signature=str(result.value)[:200],
-                            sample_value=result.value,
-                            page_url=url,
-                        )
-                        await self.lkg_store.push_snapshot(snapshot)
-                    except Exception as e:
-                        logger.warning(
-                            "lkg_update_failed",
-                            field=result.field_name,
-                            error=str(e),
-                        )
-
-                # ── Step 4: Handle failed fields ──
-                if failed_fields:
-                    # Step 4a: Spatial breaker check
-                    total = len(extraction_results)
-                    failed_count = len(failed_fields)
-                    drift_type = await self.spatial_breaker.check_and_classify(
-                        domain, total_fields=total, failed_fields=failed_count
+                    items, sample_results, field_success = (
+                        await self.data_plane.extract_page_items(page, domain_config)
                     )
+                    response.items = items
+                    response.extraction_results = sample_results
 
-                    if drift_type == DriftType.GLOBAL:
+                    # Determine failed fields (fields that matched in zero items)
+                    failed_fields = []
+                    successful_fields = []
+                    for result in sample_results:
+                        if field_success.get(result.field_name, False):
+                            successful_fields.append(result)
+                            # Use first item's value as representative
+                            response.fields[result.field_name] = result.value
+                        else:
+                            failed_fields.append(result)
+
+                    if not items:
+                        # No items found at all — treat as global drift
+                        total = len(domain_config.fields)
                         self.metrics.set_breaker_state(
                             domain, "spatial", BreakerState.OPEN
                         )
-                        raise GlobalDriftError(domain, failed_count / total)
+                        raise GlobalDriftError(domain, 1.0)
 
-                    # Process each failed field individually
-                    for failed_result in failed_fields:
-                        field_name = failed_result.field_name
-                        field_def = next(
-                            (f for f in domain_config.fields if f.name == field_name),
-                            None,
-                        )
-                        if not field_def:
-                            continue
-
-                        heal_start = time.monotonic()
-                        drift_event = DriftEvent(
-                            domain=domain,
-                            field_name=field_name,
-                            drift_type=DriftType.LOCAL,
-                            old_selector=failed_result.selector_used,
+                    # If some fields failed across ALL items, process healing
+                    if failed_fields:
+                        total = len(sample_results)
+                        failed_count = len(failed_fields)
+                        drift_type = await self.spatial_breaker.check_and_classify(
+                            domain, total_fields=total, failed_fields=failed_count
                         )
 
-                        try:
-                            # Step 4b: Temporal breaker check
-                            temporal_state = await self.temporal_breaker.check_field(
-                                domain, field_name
-                            )
-                            if temporal_state == BreakerState.REQUIRES_HUMAN_INTERVENTION:
-                                raise ThrashLimitError(
-                                    domain, field_name, 3, 48
-                                )
-
-                            # Step 4c: Sanitize + Heal
-                            raw_ax_tree = await self.data_plane.capture_aria_snapshot(page)
-                            lkg = await self.lkg_store.get_latest(domain, field_name)
-
-                            repair_result, confidence, warnings = (
-                                await self.healing_agent.heal_field(
-                                    field=field_def,
-                                    broken_selector=failed_result.selector_used,
-                                    raw_ax_tree=raw_ax_tree,
-                                    lkg_snapshot=lkg,
-                                    sanitizer=self.sanitizer,
-                                    scorer=self.scorer,
-                                    page=page,
-                                )
-                            )
-
-                            for w in warnings:
-                                logger.warning(
-                                    "injection_pattern_detected",
-                                    domain=domain,
-                                    field=field_name,
-                                    pattern=w,
-                                )
-
-                            self.metrics.record_confidence_score(
-                                domain, field_name, confidence
-                            )
-
-                            # Step 4d: Cross-validate
-                            passed, pass_count, total_holdout = (
-                                await self.cross_validator.validate_selector(
-                                    domain=domain,
-                                    field=field_def,
-                                    proposed_selector=repair_result.primary_selector,
-                                    strategy=repair_result.selector_strategy,
-                                    holdout_urls=domain_config.holdout_urls,
-                                    browser_context=context,
-                                )
-                            )
-
-                            if not passed:
-                                # Check for uniform failure → route to spatial breaker
-                                is_uniform = (
-                                    await self.cross_validator.check_uniform_failure(
-                                        domain, pass_count, total_holdout
-                                    )
-                                )
-                                if is_uniform:
-                                    self.metrics.record_drift(
-                                        domain, field_name, "global"
-                                    )
-                                drift_event.outcome = HealingOutcome.REJECTED_OVERFIT
-                                raise CrossValidationError(
-                                    domain, field_name, pass_count, total_holdout
-                                )
-
-                            # Step 4e: Confidence gate
-                            approved = self.confidence_gate.evaluate(
-                                confidence, field_name, domain
-                            )
-
-                            heal_duration = time.monotonic() - heal_start
-
-                            if approved:
-                                # Hot-reload selector
-                                await self.locator_registry.update_locator(
-                                    domain,
-                                    field_name,
-                                    repair_result.primary_selector,
-                                    repair_result.selector_strategy,
-                                )
-                                await self.temporal_breaker.record_repair(
-                                    domain,
-                                    field_name,
-                                    failed_result.selector_used,
-                                    repair_result.primary_selector,
-                                    confidence,
-                                )
-                                drift_event.new_selector = repair_result.primary_selector
-                                drift_event.confidence_score = confidence
-                                drift_event.outcome = HealingOutcome.AUTO_APPROVED
-                                drift_event.auto_healed = True
-                                drift_event.time_to_heal_seconds = heal_duration
-
-                                self.metrics.record_healing_attempt(
-                                    domain, field_name, "auto_approved", heal_duration
-                                )
-
-                                # Re-extract with healed selector
-                                try:
-                                    re_result = await self.data_plane.extract_field(
-                                        page, field_def, domain
-                                    )
-                                    if re_result.success:
-                                        response.fields[field_name] = re_result.value
-                                except Exception:
-                                    pass  # Extraction with new selector failed; field stays nulled
-
-                            else:
-                                # Quarantine
-                                sanitized_tree, _ = self.sanitizer.sanitize(raw_ax_tree)
-                                redacted_tree = self.pii_redactor.redact(sanitized_tree)
-                                record = QuarantineRecord(
-                                    domain=domain,
-                                    field_name=field_name,
-                                    page_url=url,
-                                    broken_selector=failed_result.selector_used,
-                                    sanitized_ax_tree=redacted_tree,
-                                    proposed_selector=repair_result.primary_selector,
-                                    confidence_score=confidence,
-                                )
-                                await self.quarantine_store.quarantine(record, redacted_tree)
-
-                                response.quarantined_fields.append(field_name)
-                                response.fields[field_name] = None
-
-                                drift_event.outcome = HealingOutcome.QUARANTINED
-                                drift_event.confidence_score = confidence
-                                drift_event.time_to_heal_seconds = heal_duration
-
-                                self.metrics.record_quarantine(domain, field_name)
-                                self.metrics.record_healing_attempt(
-                                    domain, field_name, "quarantined", heal_duration
-                                )
-
-                        except ThrashLimitError:
-                            response.fields[field_name] = None
-                            response.quarantined_fields.append(field_name)
-                            drift_event.outcome = HealingOutcome.REJECTED_BREAKER
+                        if drift_type == DriftType.GLOBAL:
                             self.metrics.set_breaker_state(
-                                domain, "temporal", BreakerState.REQUIRES_HUMAN_INTERVENTION
+                                domain, "spatial", BreakerState.OPEN
                             )
-                            logger.warning(
-                                "thrash_limit_hit",
+                            raise GlobalDriftError(domain, failed_count / total)
+
+                        # Process each failed field for self-healing
+                        for failed_result in failed_fields:
+                            field_name = failed_result.field_name
+                            field_def = next(
+                                (f for f in domain_config.fields if f.name == field_name),
+                                None,
+                            )
+                            if not field_def:
+                                continue
+
+                            heal_start = time.monotonic()
+                            drift_event = DriftEvent(
                                 domain=domain,
-                                field=field_name,
+                                field_name=field_name,
+                                drift_type=DriftType.LOCAL,
+                                old_selector=failed_result.selector_used,
                             )
 
-                        except (HealingError, CrossValidationError) as e:
-                            response.fields[field_name] = None
-                            response.quarantined_fields.append(field_name)
-                            heal_duration = time.monotonic() - heal_start
-                            drift_event.outcome = HealingOutcome.FAILED
-                            drift_event.time_to_heal_seconds = heal_duration
-                            self.metrics.record_healing_attempt(
-                                domain, field_name, "failed", heal_duration
+                            try:
+                                # Temporal breaker check
+                                temporal_state = await self.temporal_breaker.check_field(
+                                    domain, field_name
+                                )
+                                if temporal_state == BreakerState.REQUIRES_HUMAN_INTERVENTION:
+                                    raise ThrashLimitError(
+                                        domain, field_name, 3, 48
+                                    )
+
+                                # Sanitize + Heal
+                                raw_ax_tree = await self.data_plane.capture_aria_snapshot(page)
+                                lkg = await self.lkg_store.get_latest(domain, field_name)
+
+                                repair_result, confidence, warnings = (
+                                    await self.healing_agent.heal_field(
+                                        field=field_def,
+                                        broken_selector=failed_result.selector_used,
+                                        raw_ax_tree=raw_ax_tree,
+                                        lkg_snapshot=lkg,
+                                        sanitizer=self.sanitizer,
+                                        scorer=self.scorer,
+                                        page=page,
+                                    )
+                                )
+
+                                for w in warnings:
+                                    logger.warning(
+                                        "injection_pattern_detected",
+                                        domain=domain,
+                                        field=field_name,
+                                        pattern=w,
+                                    )
+
+                                self.metrics.record_confidence_score(
+                                    domain, field_name, confidence
+                                )
+
+                                # Cross-validate
+                                passed, pass_count, total_holdout = (
+                                    await self.cross_validator.validate_selector(
+                                        domain=domain,
+                                        field=field_def,
+                                        proposed_selector=repair_result.primary_selector,
+                                        strategy=repair_result.selector_strategy,
+                                        holdout_urls=domain_config.holdout_urls,
+                                        browser_context=context,
+                                    )
+                                )
+
+                                if not passed:
+                                    drift_event.outcome = HealingOutcome.REJECTED_OVERFIT
+                                    raise CrossValidationError(
+                                        domain, field_name, pass_count, total_holdout
+                                    )
+
+                                # Confidence gate
+                                approved = self.confidence_gate.evaluate(
+                                    confidence, field_name, domain
+                                )
+
+                                heal_duration = time.monotonic() - heal_start
+
+                                if approved:
+                                    await self.locator_registry.update_locator(
+                                        domain,
+                                        field_name,
+                                        repair_result.primary_selector,
+                                        repair_result.selector_strategy,
+                                    )
+                                    await self.temporal_breaker.record_repair(
+                                        domain,
+                                        field_name,
+                                        failed_result.selector_used,
+                                        repair_result.primary_selector,
+                                        confidence,
+                                    )
+                                    drift_event.new_selector = repair_result.primary_selector
+                                    drift_event.confidence_score = confidence
+                                    drift_event.outcome = HealingOutcome.AUTO_APPROVED
+                                    drift_event.auto_healed = True
+                                    drift_event.time_to_heal_seconds = heal_duration
+
+                                    self.metrics.record_healing_attempt(
+                                        domain, field_name, "auto_approved", heal_duration
+                                    )
+                                else:
+                                    sanitized_tree, _ = self.sanitizer.sanitize(raw_ax_tree)
+                                    redacted_tree = self.pii_redactor.redact(sanitized_tree)
+                                    record = QuarantineRecord(
+                                        domain=domain,
+                                        field_name=field_name,
+                                        page_url=url,
+                                        broken_selector=failed_result.selector_used,
+                                        sanitized_ax_tree=redacted_tree,
+                                        proposed_selector=repair_result.primary_selector,
+                                        confidence_score=confidence,
+                                    )
+                                    await self.quarantine_store.quarantine(record, redacted_tree)
+                                    response.quarantined_fields.append(field_name)
+                                    drift_event.outcome = HealingOutcome.QUARANTINED
+                                    drift_event.confidence_score = confidence
+                                    drift_event.time_to_heal_seconds = heal_duration
+                                    self.metrics.record_quarantine(domain, field_name)
+                                    self.metrics.record_healing_attempt(
+                                        domain, field_name, "quarantined", heal_duration
+                                    )
+
+                            except ThrashLimitError:
+                                response.quarantined_fields.append(field_name)
+                                drift_event.outcome = HealingOutcome.REJECTED_BREAKER
+                                self.metrics.set_breaker_state(
+                                    domain, "temporal", BreakerState.REQUIRES_HUMAN_INTERVENTION
+                                )
+
+                            except (HealingError, CrossValidationError) as e:
+                                response.quarantined_fields.append(field_name)
+                                heal_duration = time.monotonic() - heal_start
+                                drift_event.outcome = HealingOutcome.FAILED
+                                drift_event.time_to_heal_seconds = heal_duration
+                                self.metrics.record_healing_attempt(
+                                    domain, field_name, "failed", heal_duration
+                                )
+
+                            drift_event.resolved_at = datetime.now(timezone.utc)
+                            drift_events.append(drift_event)
+                            self.metrics.record_drift(domain, field_name, drift_event.drift_type.value)
+
+                # ── Single-Item Branch (original) ──
+                else:
+                    extraction_results = await self.data_plane.extract_page(
+                        page, domain_config
+                    )
+                    response.extraction_results = extraction_results
+
+                    failed_fields: list[ExtractionResult] = []
+                    successful_fields: list[ExtractionResult] = []
+
+                    for result in extraction_results:
+                        if result.success:
+                            successful_fields.append(result)
+                            response.fields[result.field_name] = result.value
+                        else:
+                            failed_fields.append(result)
+
+                    # ── Step 3: Update LKG for successful extractions ──
+                    for result in successful_fields:
+                        try:
+                            ax_neighborhood = await self.data_plane.capture_aria_snapshot(
+                                page, result.selector_used
                             )
-                            logger.error(
-                                "healing_failed",
+                            snapshot = LKGSnapshot(
                                 domain=domain,
-                                field=field_name,
+                                field_name=result.field_name,
+                                selector=result.selector_used,
+                                strategy=result.strategy,
+                                ax_tree_neighborhood=ax_neighborhood,
+                                text_signature=str(result.value)[:200],
+                                sample_value=result.value,
+                                page_url=url,
+                            )
+                            await self.lkg_store.push_snapshot(snapshot)
+                        except Exception as e:
+                            logger.warning(
+                                "lkg_update_failed",
+                                field=result.field_name,
                                 error=str(e),
                             )
 
-                        drift_event.resolved_at = datetime.now(timezone.utc)
-                        drift_events.append(drift_event)
-                        self.metrics.record_drift(domain, field_name, drift_event.drift_type.value)
+                    # ── Step 4: Handle failed fields ──
+                    if failed_fields:
+                        # Step 4a: Spatial breaker check
+                        total = len(extraction_results)
+                        failed_count = len(failed_fields)
+                        drift_type = await self.spatial_breaker.check_and_classify(
+                            domain, total_fields=total, failed_fields=failed_count
+                        )
+
+                        if drift_type == DriftType.GLOBAL:
+                            self.metrics.set_breaker_state(
+                                domain, "spatial", BreakerState.OPEN
+                            )
+                            raise GlobalDriftError(domain, failed_count / total)
+
+                        # Process each failed field individually
+                        for failed_result in failed_fields:
+                            field_name = failed_result.field_name
+                            field_def = next(
+                                (f for f in domain_config.fields if f.name == field_name),
+                                None,
+                            )
+                            if not field_def:
+                                continue
+
+                            heal_start = time.monotonic()
+                            drift_event = DriftEvent(
+                                domain=domain,
+                                field_name=field_name,
+                                drift_type=DriftType.LOCAL,
+                                old_selector=failed_result.selector_used,
+                            )
+
+                            try:
+                                # Step 4b: Temporal breaker check
+                                temporal_state = await self.temporal_breaker.check_field(
+                                    domain, field_name
+                                )
+                                if temporal_state == BreakerState.REQUIRES_HUMAN_INTERVENTION:
+                                    raise ThrashLimitError(
+                                        domain, field_name, 3, 48
+                                    )
+
+                                # Step 4c: Sanitize + Heal
+                                raw_ax_tree = await self.data_plane.capture_aria_snapshot(page)
+                                lkg = await self.lkg_store.get_latest(domain, field_name)
+
+                                repair_result, confidence, warnings = (
+                                    await self.healing_agent.heal_field(
+                                        field=field_def,
+                                        broken_selector=failed_result.selector_used,
+                                        raw_ax_tree=raw_ax_tree,
+                                        lkg_snapshot=lkg,
+                                        sanitizer=self.sanitizer,
+                                        scorer=self.scorer,
+                                        page=page,
+                                    )
+                                )
+
+                                for w in warnings:
+                                    logger.warning(
+                                        "injection_pattern_detected",
+                                        domain=domain,
+                                        field=field_name,
+                                        pattern=w,
+                                    )
+
+                                self.metrics.record_confidence_score(
+                                    domain, field_name, confidence
+                                )
+
+                                # Step 4d: Cross-validate
+                                passed, pass_count, total_holdout = (
+                                    await self.cross_validator.validate_selector(
+                                        domain=domain,
+                                        field=field_def,
+                                        proposed_selector=repair_result.primary_selector,
+                                        strategy=repair_result.selector_strategy,
+                                        holdout_urls=domain_config.holdout_urls,
+                                        browser_context=context,
+                                    )
+                                )
+
+                                if not passed:
+                                    # Check for uniform failure → route to spatial breaker
+                                    is_uniform = (
+                                        await self.cross_validator.check_uniform_failure(
+                                            domain, pass_count, total_holdout
+                                        )
+                                    )
+                                    if is_uniform:
+                                        self.metrics.record_drift(
+                                            domain, field_name, "global"
+                                        )
+                                    drift_event.outcome = HealingOutcome.REJECTED_OVERFIT
+                                    raise CrossValidationError(
+                                        domain, field_name, pass_count, total_holdout
+                                    )
+
+                                # Step 4e: Confidence gate
+                                approved = self.confidence_gate.evaluate(
+                                    confidence, field_name, domain
+                                )
+
+                                heal_duration = time.monotonic() - heal_start
+
+                                if approved:
+                                    # Hot-reload selector
+                                    await self.locator_registry.update_locator(
+                                        domain,
+                                        field_name,
+                                        repair_result.primary_selector,
+                                        repair_result.selector_strategy,
+                                    )
+                                    await self.temporal_breaker.record_repair(
+                                        domain,
+                                        field_name,
+                                        failed_result.selector_used,
+                                        repair_result.primary_selector,
+                                        confidence,
+                                    )
+                                    drift_event.new_selector = repair_result.primary_selector
+                                    drift_event.confidence_score = confidence
+                                    drift_event.outcome = HealingOutcome.AUTO_APPROVED
+                                    drift_event.auto_healed = True
+                                    drift_event.time_to_heal_seconds = heal_duration
+
+                                    self.metrics.record_healing_attempt(
+                                        domain, field_name, "auto_approved", heal_duration
+                                    )
+
+                                    # Re-extract with healed selector
+                                    try:
+                                        re_result = await self.data_plane.extract_field(
+                                            page, field_def, domain
+                                        )
+                                        if re_result.success:
+                                            response.fields[field_name] = re_result.value
+                                    except Exception:
+                                        pass  # Extraction with new selector failed; field stays nulled
+
+                                else:
+                                    # Quarantine
+                                    sanitized_tree, _ = self.sanitizer.sanitize(raw_ax_tree)
+                                    redacted_tree = self.pii_redactor.redact(sanitized_tree)
+                                    record = QuarantineRecord(
+                                        domain=domain,
+                                        field_name=field_name,
+                                        page_url=url,
+                                        broken_selector=failed_result.selector_used,
+                                        sanitized_ax_tree=redacted_tree,
+                                        proposed_selector=repair_result.primary_selector,
+                                        confidence_score=confidence,
+                                    )
+                                    await self.quarantine_store.quarantine(record, redacted_tree)
+
+                                    response.quarantined_fields.append(field_name)
+                                    response.fields[field_name] = None
+
+                                    drift_event.outcome = HealingOutcome.QUARANTINED
+                                    drift_event.confidence_score = confidence
+                                    drift_event.time_to_heal_seconds = heal_duration
+
+                                    self.metrics.record_quarantine(domain, field_name)
+                                    self.metrics.record_healing_attempt(
+                                        domain, field_name, "quarantined", heal_duration
+                                    )
+
+                            except ThrashLimitError:
+                                response.fields[field_name] = None
+                                response.quarantined_fields.append(field_name)
+                                drift_event.outcome = HealingOutcome.REJECTED_BREAKER
+                                self.metrics.set_breaker_state(
+                                    domain, "temporal", BreakerState.REQUIRES_HUMAN_INTERVENTION
+                                )
+                                logger.warning(
+                                    "thrash_limit_hit",
+                                    domain=domain,
+                                    field=field_name,
+                                )
+
+                            except (HealingError, CrossValidationError) as e:
+                                response.fields[field_name] = None
+                                response.quarantined_fields.append(field_name)
+                                heal_duration = time.monotonic() - heal_start
+                                drift_event.outcome = HealingOutcome.FAILED
+                                drift_event.time_to_heal_seconds = heal_duration
+                                self.metrics.record_healing_attempt(
+                                    domain, field_name, "failed", heal_duration
+                                )
+                                logger.error(
+                                    "healing_failed",
+                                    domain=domain,
+                                    field=field_name,
+                                    error=str(e),
+                                )
+
+                            drift_event.resolved_at = datetime.now(timezone.utc)
+                            drift_events.append(drift_event)
+                            self.metrics.record_drift(domain, field_name, drift_event.drift_type.value)
 
             finally:
                 await context.close()

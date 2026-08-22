@@ -70,7 +70,7 @@ class MetricsCollector:
             BreakerState.CLOSED: 0,
             BreakerState.OPEN: 1,
             BreakerState.HALF_OPEN: 2,
-            BreakerState.REQUIRES_HUMAN: 3
+            BreakerState.REQUIRES_HUMAN_INTERVENTION: 3
         }
         val = state_mapping.get(state, 0)
         self.scraper_circuit_breaker_state.labels(domain=domain, breaker_type=breaker_type).set(val)

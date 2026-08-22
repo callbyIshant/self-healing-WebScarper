@@ -1,0 +1,80 @@
+domain: naukri.com
+multi_item: true
+item_container: div.srp-jobtuple-wrapper, div.cust-job-tuple, article.jobTuple
+scroll_count: 8
+rate_limit:
+  requests_per_minute: 30
+  burst_capacity: 5
+fields:
+- name: job_title
+  selector: h2 a, a.title
+  strategy: css
+  field_type: string
+  volatility: low
+  required: false
+  description: Title of the job posting
+- name: job_url
+  selector: h2 a, a.title
+  strategy: css
+  field_type: url
+  volatility: low
+  required: false
+  description: Direct URL to the job listing detail page
+- name: company_name
+  selector: a.comp-name, a.mw-name
+  strategy: css
+  field_type: string
+  volatility: low
+  required: false
+  description: Name of the hiring company
+- name: company_rating
+  selector: a.rating, span.main-2
+  strategy: css
+  field_type: float
+  volatility: low
+  required: false
+  description: Rating score of the company
+- name: review_count
+  selector: a.review, a.review-count
+  strategy: css
+  field_type: string
+  volatility: low
+  required: false
+  description: Number of reviews for the company
+- name: experience_required
+  selector: span.exp-wrap, span.experience
+  strategy: css
+  field_type: string
+  volatility: low
+  required: false
+  description: Required years of experience
+- name: location
+  selector: span.loc-wrap, span.location
+  strategy: css
+  field_type: string
+  volatility: low
+  required: false
+  description: Job location(s)
+- name: job_description
+  selector: span.job-desc, div.job-description
+  strategy: css
+  field_type: string
+  volatility: low
+  required: false
+  description: Brief description snippet of the job role
+- name: skills
+  selector: ul.tags-gt li, ul.dot li
+  strategy: css
+  field_type: string
+  volatility: low
+  required: false
+  description: Key skills or keywords required for the role
+- name: posted_date
+  selector: span.job-post-day, span.posted-date
+  strategy: css
+  field_type: string
+  volatility: low
+  required: false
+  description: Time elapsed since the job was posted
+holdout_urls:
+- https://www.naukri.com/data-engineering-jobs-in-gurgoan?k=data%20engineering&l=gurgoan&experience=0

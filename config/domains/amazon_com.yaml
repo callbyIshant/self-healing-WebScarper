@@ -1,0 +1,45 @@
+domain: amazon.com
+multi_item: true
+item_container: 'li:has(a[href*="/dp/"]), [data-component-type="s-search-result"], .s-result-item'
+scroll_count: 10
+rate_limit:
+  requests_per_minute: 30
+  burst_capacity: 5
+fields:
+- name: product_title
+  selector: a[href*="/dp/"]
+  strategy: css
+  field_type: string
+  volatility: low
+  required: true
+  description: Name or title of the product item
+- name: price
+  selector: .a-price .a-offscreen, [class*="price"], text
+  strategy: css
+  field_type: string
+  volatility: low
+  required: true
+  description: Displayed selling price of the product
+- name: review_rating
+  selector: '[aria-label*="out of 5 stars"], text'
+  strategy: css
+  field_type: string
+  volatility: low
+  required: false
+  description: Average customer star rating
+- name: review_count
+  selector: 'text'
+  strategy: css
+  field_type: string
+  volatility: low
+  required: false
+  description: Total number of customer reviews or ratings
+- name: product_url
+  selector: a[href*="/dp/"]
+  strategy: css
+  field_type: url
+  volatility: low
+  required: false
+  description: Direct web link to the product details page
+holdout_urls:
+- https://www.amazon.com/stores/page/8A855C44-4A5C-4834-84E7-69364760AF36?ingress=0&visitId=2022cfcb-611e-44af-bb93-250074c9107f&ref_=pd_hp_d_r_btf_unk

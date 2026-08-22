@@ -1,15 +1,22 @@
-"""
-CLI entry point using click and rich.
-"""
 import asyncio
 import glob
+import json
 import os
+import sys
 import click
 import yaml
 from dotenv import load_dotenv
 from rich.console import Console
 from rich.table import Table
 from rich.panel import Panel
+
+# Reconfigure stdout/stderr for full UTF-8 support on Windows
+if sys.platform == "win32":
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
 
 # Ensure .env is loaded before pipeline starts
 load_dotenv()
@@ -20,7 +27,7 @@ from scraper.circuit_breaker.temporal import TemporalBreaker
 from scraper.confidence.quarantine import QuarantineStore
 from scraper.telemetry.metrics import MetricsCollector
 
-console = Console()
+console = Console(safe_box=True)
 
 
 @click.group()
@@ -32,9 +39,12 @@ def main():
 @main.command()
 @click.argument('url')
 @click.argument('prompt', required=False, default=None)
+@click.option('--regenerate', is_flag=True, default=False, help='Force re-analyzing accessibility tree and synthesizing a fresh schema')
+@click.option('--headless/--headful', default=False, help='Run browser in headless or headful mode (default headful for anti-bot resilience)')
+@click.option('--output', default=None, help='Path to save extracted JSON output (e.g. data/results.json)')
 @click.option('--config', default='config', help='Path to config directory')
 @click.option('--db', default='data/scraper.db', help='Path to SQLite database')
-def auto(url: str, prompt: str | None, config: str, db: str):
+def auto(url: str, prompt: str | None, regenerate: bool, headless: bool, output: str | None, config: str, db: str):
     """Universal Scraper: Give ANY URL, it auto-generates schemas, runs the 9-layer pipeline, and auto-heals when layout changes."""
     from urllib.parse import urlparse
     from playwright.async_api import async_playwright
@@ -45,23 +55,35 @@ def auto(url: str, prompt: str | None, config: str, db: str):
         safe_name = domain.replace(".", "_") + ".yaml"
         config_file = os.path.join(config, "domains", safe_name)
 
-        if not os.path.exists(config_file):
-            console.print(Panel(f"[bold cyan]First time scraping {domain}[/bold cyan]\nAuto-analyzing accessibility tree to synthesize resilient schema...", border_style="cyan"))
+        if regenerate or not os.path.exists(config_file):
+            action_label = "Regenerating" if regenerate else "First time scraping"
+            console.print(Panel(f"[bold cyan]{action_label} {domain}[/bold cyan]\nAuto-analyzing accessibility tree to synthesize resilient schema...", border_style="cyan"))
             
             async with async_playwright() as p:
-                browser = await p.chromium.launch(headless=True)
-                page = await browser.new_page()
-                await page.goto(url, wait_until="domcontentloaded", timeout=20000)
+                browser = await p.chromium.launch(
+                    headless=headless,
+                    args=["--disable-blink-features=AutomationControlled", "--no-sandbox"],
+                )
+                context = await browser.new_context(
+                    user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+                    viewport={"width": 1920, "height": 1080},
+                )
+                page = await context.new_page()
+                await page.add_init_script("delete Object.getPrototypeOf(navigator).webdriver")
+                await page.goto(url, wait_until="domcontentloaded", timeout=25000)
+                # Wait briefly for dynamic JS to render
+                await page.wait_for_timeout(4000)
                 ax_tree = await page.aria_snapshot()
                 await browser.close()
 
             generator = AutoSchemaGenerator()
             domain_config = await generator.generate_schema(url, ax_tree, user_prompt=prompt)
             saved_path = generator.save_config(domain_config, config_dir=config)
-            console.print(f"[bold green][OK] Synthesized schema with {len(domain_config.fields)} fields saved to [yellow]{saved_path}[/yellow][/bold green]\n")
+            mode_desc = "multi-item catalog" if domain_config.multi_item else "single-entity page"
+            console.print(f"[bold green][OK] Synthesized {mode_desc} schema with {len(domain_config.fields)} fields saved to [yellow]{saved_path}[/yellow][/bold green]\n")
 
         # Run the full 9-layer self-healing pipeline
-        pipeline = ScrapingPipeline(config_path=config, db_path=db)
+        pipeline = ScrapingPipeline(config_path=config, db_path=db, headless=headless)
         await pipeline.initialize()
 
         try:
@@ -70,22 +92,78 @@ def auto(url: str, prompt: str | None, config: str, db: str):
             response = await pipeline.scrape(request)
 
             if response.success:
-                table = Table(title=f"Extracted Structured Data: {domain}", header_style="bold green")
-                table.add_column("Field", style="cyan", no_wrap=True)
-                table.add_column("Value", style="white")
-                table.add_column("Status", style="bold")
+                # Check if multi-item extraction produced items
+                if response.items:
+                    items = response.items
+                    total = len(items)
+                    console.print(f"\n[bold green]Extracted {total} Items from {domain}[/bold green]\n")
 
-                for k, v in response.fields.items():
-                    if k in response.quarantined_fields or v is None:
-                        status = "[red]QUARANTINED[/red]"
-                        val_str = "[dim italic]Nulled (Awaiting Review)[/dim italic]"
-                    else:
-                        status = "[green]SUCCESS[/green]"
-                        val_str = str(v)
-                    table.add_row(k, val_str, status)
+                    # Identify columns
+                    all_keys = list(items[0].keys()) if items else []
+                    
+                    table = Table(title=f"Extracted Catalog Items: {domain} ({total} Total)", header_style="bold green")
+                    table.add_column("#", style="dim", width=4)
+                    for key in all_keys:
+                        col_style = "cyan" if "title" in key or "name" in key else "yellow" if "price" in key else "white"
+                        table.add_column(key.replace("_", " ").title(), style=col_style, max_width=40)
 
-                console.print(table)
-                console.print()
+                    # Show first 20 items in terminal
+                    display_limit = 20
+                    for idx, it in enumerate(items[:display_limit], 1):
+                        row_vals = [str(idx)]
+                        for key in all_keys:
+                            val = it.get(key)
+                            row_vals.append(str(val) if val is not None else "[dim]-[/dim]")
+                        table.add_row(*row_vals)
+
+                    console.print(table)
+                    if total > display_limit:
+                        console.print(f"[dim italic]... showing first {display_limit} of {total} items.[/dim italic]\n")
+
+                    # Summary statistics
+                    with_price = sum(1 for it in items if any("price" in k and it.get(k) for k in it))
+                    with_title = sum(1 for it in items if any(("title" in k or "name" in k) and it.get(k) for k in it))
+                    summary_text = f"Total Items: [bold]{total}[/bold] | With Title: [bold green]{with_title}/{total}[/bold green] | With Price: [bold green]{with_price}/{total}[/bold green]"
+                    console.print(Panel(summary_text, title="Extraction Summary", border_style="green"))
+
+                    # Save JSON output if requested or default output file
+                    out_file = output or f"data/{domain.replace('.', '_')}_extracted.json"
+                    os.makedirs(os.path.dirname(out_file) or ".", exist_ok=True)
+                    out_data = {
+                        "url": url,
+                        "domain": domain,
+                        "total_items": total,
+                        "items": items,
+                        "drift_events": [e.model_dump(mode="json") for e in response.drift_events],
+                    }
+                    with open(out_file, "w", encoding="utf-8") as f:
+                        json.dump(out_data, f, indent=2, ensure_ascii=False)
+                    console.print(f"[bold cyan][SAVED] Full structured dataset saved to [yellow]{out_file}[/yellow][/bold cyan]\n")
+
+                else:
+                    # Single entity display
+                    table = Table(title=f"Extracted Structured Data: {domain}", header_style="bold green")
+                    table.add_column("Field", style="cyan", no_wrap=True)
+                    table.add_column("Value", style="white")
+                    table.add_column("Status", style="bold")
+
+                    for k, v in response.fields.items():
+                        if k in response.quarantined_fields or v is None:
+                            status = "[red]QUARANTINED[/red]"
+                            val_str = "[dim italic]Nulled (Awaiting Review)[/dim italic]"
+                        else:
+                            status = "[green]SUCCESS[/green]"
+                            val_str = str(v)
+                        table.add_row(k, val_str, status)
+
+                    console.print(table)
+                    console.print()
+
+                    if output:
+                        os.makedirs(os.path.dirname(output) or ".", exist_ok=True)
+                        with open(output, "w", encoding="utf-8") as f:
+                            json.dump(response.fields, f, indent=2, ensure_ascii=False)
+                        console.print(f"[bold cyan][SAVED] Extracted data saved to [yellow]{output}[/yellow][/bold cyan]\n")
 
                 if response.drift_events:
                     drift_table = Table(title="AI Self-Healing Repair Report", header_style="bold magenta")
